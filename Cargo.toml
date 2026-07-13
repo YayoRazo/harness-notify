@@ -1,0 +1,38 @@
+[package]
+name = "harness-notify"
+version = "0.1.0"
+edition = "2021"
+description = "Cross-platform, multi-harness desktop notifier for AI coding agents."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/YayoRazo/harness-notify"
+publish = false
+
+[[bin]]
+name = "harness-notify"
+path = "src/main.rs"
+
+[features]
+default = ["gui"]
+gui = ["dep:eframe", "dep:egui"]
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+notify-rust = "4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+dirs = "5"
+eframe = { version = "0.29", optional = true }
+egui = { version = "0.29", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+strip = true
+lto = "thin"
+opt-level = "s"
+
+[workspace]
+members = ["xtask"]
