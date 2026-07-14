@@ -4,6 +4,18 @@
 // return Ok(()) while Windows silently drops the toast - this exists to
 // catch exactly that case and warn the operator instead of leaving them
 // wondering why nothing ever appeared.
+//
+// macOS is deliberately not checked: the legacy NSUserNotificationCenter
+// backend we use has the same "always looks like Ok" problem as Windows,
+// but the reliable fix (UNUserNotificationCenter's real authorization
+// status) requires a proper bundle identifier that a bare `cargo install`
+// binary doesn't have - notify-rust itself only exposes that path behind
+// an experimental feature for exactly this reason. The alternative
+// (reading com.apple.ncprefs / the Notification Center SQLite db) means
+// first resolving which *terminal emulator's* bundle id is actually
+// relevant, then parsing an undocumented, OS-version-dependent Apple
+// format - not verifiable without a live Mac. Left unimplemented rather
+// than guessed, same as Antigravity's unconfirmed attention event.
 
 /// `Some(true)`/`Some(false)` when the platform's setting is known;
 /// `None` when this platform isn't checked yet (assume enabled - never
@@ -13,30 +25,33 @@ pub fn os_notifications_enabled() -> Option<bool> {
     {
         windows::toast_enabled()
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        Some(linux::notification_daemon_running())
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         None
     }
 }
 
-/// Interprets the raw `ToastEnabled` DWORD read from the registry.
-/// Pulled out so the decision logic is testable without touching a real
-/// registry: a missing key/value is `None` (unknown, don't warn) rather
-/// than assumed disabled, since some Windows configurations may not have
-/// written this value at all.
-fn interpret_toast_enabled(raw: Option<u32>) -> Option<bool> {
-    match raw {
-        Some(0) => Some(false),
-        Some(_) => Some(true),
-        None => None,
-    }
-}
-
 #[cfg(target_os = "windows")]
 mod windows {
-    use super::interpret_toast_enabled;
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
+
+    /// Interprets the raw `ToastEnabled` DWORD read from the registry.
+    /// Pulled out so the decision logic is testable without touching a real
+    /// registry: a missing key/value is `None` (unknown, don't warn) rather
+    /// than assumed disabled, since some Windows configurations may not have
+    /// written this value at all.
+    fn interpret_toast_enabled(raw: Option<u32>) -> Option<bool> {
+        match raw {
+            Some(0) => Some(false),
+            Some(_) => Some(true),
+            None => None,
+        }
+    }
 
     pub fn toast_enabled() -> Option<bool> {
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
@@ -46,25 +61,40 @@ mod windows {
         let raw: Option<u32> = key.get_value("ToastEnabled").ok();
         interpret_toast_enabled(raw)
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::interpret_toast_enabled;
+
+        #[test]
+        fn zero_means_disabled() {
+            assert_eq!(interpret_toast_enabled(Some(0)), Some(false));
+        }
+
+        #[test]
+        fn nonzero_means_enabled() {
+            assert_eq!(interpret_toast_enabled(Some(1)), Some(true));
+            assert_eq!(interpret_toast_enabled(Some(42)), Some(true));
+        }
+
+        #[test]
+        fn missing_value_is_unknown_not_disabled() {
+            assert_eq!(interpret_toast_enabled(None), None);
+        }
+    }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn zero_means_disabled() {
-        assert_eq!(interpret_toast_enabled(Some(0)), Some(false));
-    }
-
-    #[test]
-    fn nonzero_means_enabled() {
-        assert_eq!(interpret_toast_enabled(Some(1)), Some(true));
-        assert_eq!(interpret_toast_enabled(Some(42)), Some(true));
-    }
-
-    #[test]
-    fn missing_value_is_unknown_not_disabled() {
-        assert_eq!(interpret_toast_enabled(None), None);
+#[cfg(target_os = "linux")]
+mod linux {
+    /// Whether a notification daemon is registered on the session D-Bus at
+    /// all (org.freedesktop.Notifications) - the standard freedesktop.org
+    /// mechanism, reused via notify-rust's own already-linked zbus client
+    /// rather than adding a direct D-Bus dependency of our own. This
+    /// detects the coarse "notifications can never work, nothing is
+    /// listening" case (no daemon installed/running), not a per-app or
+    /// do-not-disturb state - those vary by daemon (dunst, mako, ...) with
+    /// no common standard, so they are out of scope rather than guessed.
+    pub fn notification_daemon_running() -> bool {
+        notify_rust::get_server_information().is_ok()
     }
 }

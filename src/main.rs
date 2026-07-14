@@ -143,11 +143,14 @@ fn read_hook_payload() -> Option<serde_json::Value> {
 fn run_check() {
     // Never blocks session start: prints at most one line, always exits 0.
     if os_check::os_notifications_enabled() == Some(false) {
+        let hint = if cfg!(target_os = "linux") {
+            "no notification daemon is running (install/start one, e.g. dunst or mako)"
+        } else {
+            "Settings > System > Notifications > \"Notifications\" is off"
+        };
         println!(
-            "harness-notify: OS-level desktop notifications appear to be disabled \
-(Windows: Settings > System > Notifications > \"Notifications\"). \
-harness-notify's hooks will run without error but nothing will appear \
-on screen until this is turned back on."
+            "harness-notify: OS-level desktop notifications appear to be disabled - {hint}. \
+harness-notify's hooks will run without error but nothing will appear on screen until this is fixed."
         );
     }
 }

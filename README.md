@@ -98,7 +98,7 @@ License: dual MIT OR Apache-2.0 (see `LICENSE-MIT` and `LICENSE-APACHE`).
 | `harness-notify install` | `--harness <id>` (required), `--project` | Installs the notify hook (and, on Tier A/B, a `SessionStart` OS-notification check) into the named harness's config. Defaults to the user-level location; `--project` targets the current project directory instead. Fails with a clear message on Tier C/D harnesses. |
 | `harness-notify uninstall` | `--harness <id>` (required), `--project` | Removes only the hook entries this tool installed, leaving any other entries in the same file untouched. Fails with a clear message on Tier C/D harnesses. |
 | `harness-notify test` | `--harness <id>` | Fires a sample "done" notification immediately, ignoring the harness's own hook wiring - useful for confirming the OS notification path itself works. It still goes through the same `should_fire()` config check as a real notify, so `events.done=false` or active quiet hours will silently suppress it too. |
-| `harness-notify check` | `--hook <name>` | Checks whether the OS will actually display a notification (Windows only for now - see "Session-start check" below) and prints a warning if it looks disabled. Called from a `SessionStart`/`session.created` hook, not run by hand. |
+| `harness-notify check` | `--hook <name>` | Checks whether the OS will actually display a notification (Windows and Linux - see "Session-start check" below) and prints a warning if it looks disabled. Called from a `SessionStart`/`session.created` hook, not run by hand. |
 | `harness-notify config get <key>` | - | Prints one setting's current value. |
 | `harness-notify config set <key> <value>` | - | Changes one setting and saves `config.toml`. |
 | `harness-notify config list` | - | Prints every current setting. |
@@ -168,17 +168,31 @@ the same as a real `SubagentStop` firing - not a separate toggle to learn.
 
 ## Session-start check
 
-Because a WinRT toast call can report success even when Windows silently
-drops it (the master "Notifications" toggle being off is the one confirmed
-case - see `src/os_check.rs`), Tier A/B `install` also wires a
-`SessionStart`/`session.created` hook that runs `harness-notify check`
-once per session. If it detects notifications are off, it prints a plain
-warning that the harness surfaces as context at the start of your next
-session - so a broken setup gets caught by the harness telling you, not by
-silence. Windows is the only platform checked for real today;
-macOS/Linux always assume notifications are enabled until a real signal
-for those platforms is confirmed (same honesty-over-uniform-coverage
-approach as the tier table above).
+Because a toast/notification call can report success even when the OS
+silently drops it, Tier A/B `install` also wires a `SessionStart`/
+`session.created` hook that runs `harness-notify check` once per session.
+If it detects notifications are off, it prints a plain warning that the
+harness surfaces as context at the start of your next session - so a
+broken setup gets caught by the harness telling you, not by silence.
+`src/os_check.rs` has the confirmed signal per platform:
+
+- **Windows**: the master "Notifications" toggle
+  (`HKCU\...\PushNotifications\ToastEnabled`) being off. This is what a
+  WinRT toast call reports success on even though nothing is ever shown.
+- **Linux**: whether a notification daemon answers on the session D-Bus at
+  all (`org.freedesktop.Notifications`, via `notify-rust`'s own already-
+  linked client - no new dependency). This catches "nothing is listening"
+  (no daemon installed/running); a specific daemon's own do-not-disturb
+  state isn't checked, since that varies per daemon (dunst, mako, ...) with
+  no common standard.
+- **macOS**: not checked. The backend we use has the same
+  "always looks like success" problem as Windows, but the reliable fix
+  (`UNUserNotificationCenter`'s real authorization status) requires a
+  proper bundle identifier a bare `cargo install` binary doesn't have -
+  confirmed by reading `notify-rust`'s own source, which gates that API
+  behind an experimental feature for exactly this reason. Left
+  unimplemented rather than guessed, same as Antigravity's unconfirmed
+  attention event.
 
 ## Platform notes
 
