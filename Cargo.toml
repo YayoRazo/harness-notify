@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "Cross-platform, multi-harness desktop notifier for AI coding agents."
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/YayoRazo/harness-notify"
+repository = "https://github.com/YayoRazo/razo-harness-notify"
 publish = false
 
 [[bin]]
