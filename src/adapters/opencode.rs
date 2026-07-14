@@ -17,12 +17,16 @@ fn plugin_source(binary_path: &Path) -> String {
 export default async ({{ directory }}) => {{
   const {{ spawn }} = await import("node:child_process")
   const fire = (event) => {{
-    spawn({bin}, ["notify", "--harness", "opencode", "--event", event, "--message", directory], {{ stdio: "ignore", detached: true }}).unref()
+    spawn({bin}, ["notify", "--harness", "opencode", "--event", event, "--cwd", directory], {{ stdio: "ignore", detached: true }}).unref()
+  }}
+  const check = () => {{
+    spawn({bin}, ["check", "--hook", "session-created"], {{ stdio: "ignore", detached: true }}).unref()
   }}
   return {{
     event: async ({{ event }}) => {{
       if (event.type === "session.idle" || event.type === "session.status") fire("done")
       if (event.type === "permission.asked") fire("attention")
+      if (event.type === "session.created") check()
     }},
   }}
 }}
@@ -76,7 +80,14 @@ mod tests {
         assert!(text.contains("event:"));
         assert!(text.contains("session.idle"));
         assert!(text.contains("permission.asked"));
-        assert!(!text.contains("session.created"), "must not use the non-firing session.created event key");
+        // session.created is legitimately used here as an `event.type ===`
+        // comparison VALUE inside the correct `event:` dispatcher (it fires
+        // the session-start OS-notification check). What must never come
+        // back is the old anti-pattern of using it as a top-level HOOKS
+        // OBJECT KEY (`'session.created': async () => {}`), which opencode's
+        // real plugin loader never dispatches to at all.
+        assert!(!text.contains("'session.created':"), "must not use session.created as a non-firing hooks object key");
+        assert!(text.contains(r#"event.type === "session.created""#), "must use session.created as an event.type comparison inside the event: dispatcher");
     }
 
     #[test]

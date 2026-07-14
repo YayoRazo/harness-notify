@@ -20,11 +20,20 @@ fn settings_path(base_dir: &Path) -> PathBuf {
 /// named, aliased, or invoked.
 const MARKER: &str = "notify --harness claude-code --event";
 
+/// Same idea for the SessionStart entry - a distinctive, multi-word marker
+/// from our own fixed argument list, not a single generic word like "check"
+/// that a foreign hook could plausibly also contain.
+const CHECK_MARKER: &str = "check --hook session-start";
+
 fn our_command(binary_path: &Path, event: &str) -> String {
     format!("\"{}\" notify --harness claude-code --event {}", binary_path.display(), event)
 }
 
-fn patch(root: &mut Value, hook_name: &str, command: Option<String>) -> Result<(), String> {
+fn our_check_command(binary_path: &Path) -> String {
+    format!("\"{}\" check --hook session-start", binary_path.display())
+}
+
+fn patch(root: &mut Value, hook_name: &str, marker: &str, command: Option<String>) -> Result<(), String> {
     let hooks = root
         .as_object_mut()
         .ok_or_else(|| "settings.json root is not a JSON object".to_string())?
@@ -42,7 +51,7 @@ fn patch(root: &mut Value, hook_name: &str, command: Option<String>) -> Result<(
         !group["hooks"]
             .as_array()
             .map(|h| h.iter().any(|entry| {
-                entry["command"].as_str().map(|c| c.contains(MARKER)).unwrap_or(false)
+                entry["command"].as_str().map(|c| c.contains(marker)).unwrap_or(false)
             }))
             .unwrap_or(false)
     });
@@ -75,8 +84,9 @@ impl HookAdapter for ClaudeCodeAdapter {
         backup_before_write(&path).map_err(|e| e.to_string())?;
         let mut root = read_root(&path)?;
         for (hook_name, event) in HOOK_MAP {
-            patch(&mut root, hook_name, Some(our_command(binary_path, event.as_str())))?;
+            patch(&mut root, hook_name, MARKER, Some(our_command(binary_path, event.as_str())))?;
         }
+        patch(&mut root, "SessionStart", CHECK_MARKER, Some(our_check_command(binary_path)))?;
         write_root(&path, &root)
     }
 
@@ -85,8 +95,9 @@ impl HookAdapter for ClaudeCodeAdapter {
         backup_before_write(&path).map_err(|e| e.to_string())?;
         let mut root = read_root(&path)?;
         for (hook_name, _) in HOOK_MAP {
-            patch(&mut root, hook_name, None)?;
+            patch(&mut root, hook_name, MARKER, None)?;
         }
+        patch(&mut root, "SessionStart", CHECK_MARKER, None)?;
         write_root(&path, &root)
     }
 }
@@ -170,5 +181,40 @@ mod tests {
         let adapter = ClaudeCodeAdapter;
         let result = adapter.install(dir.path(), std::path::Path::new("/bin/harness-notify"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn install_wires_session_start_check() {
+        let dir = tempdir().unwrap();
+        let adapter = ClaudeCodeAdapter;
+        adapter.install(dir.path(), std::path::Path::new("/bin/harness-notify")).unwrap();
+        let text = std::fs::read_to_string(settings_path(dir.path())).unwrap();
+        let root: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(root["hooks"]["SessionStart"].as_array().unwrap().len(), 1);
+        assert!(text.contains("check --hook session-start"));
+    }
+
+    #[test]
+    fn session_start_check_is_idempotent() {
+        let dir = tempdir().unwrap();
+        let adapter = ClaudeCodeAdapter;
+        let bin = std::path::Path::new("/bin/harness-notify");
+        adapter.install(dir.path(), bin).unwrap();
+        adapter.install(dir.path(), bin).unwrap();
+        let text = std::fs::read_to_string(settings_path(dir.path())).unwrap();
+        let root: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(root["hooks"]["SessionStart"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn uninstall_removes_session_start_check_too() {
+        let dir = tempdir().unwrap();
+        let adapter = ClaudeCodeAdapter;
+        let bin = std::path::Path::new("/bin/harness-notify");
+        adapter.install(dir.path(), bin).unwrap();
+        adapter.uninstall(dir.path()).unwrap();
+        let text = std::fs::read_to_string(settings_path(dir.path())).unwrap();
+        let root: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(root["hooks"]["SessionStart"].as_array().unwrap().len(), 0);
     }
 }

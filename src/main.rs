@@ -5,6 +5,7 @@ mod config_ops;
 mod events;
 mod gui;
 mod notify;
+mod os_check;
 mod resolve;
 
 use adapters::all_adapters;
@@ -12,8 +13,9 @@ use clap::Parser;
 use cli::{Cli, Command, ConfigAction};
 use config::{default_config_path, load_config, save_config};
 use events::CanonicalEvent;
-use notify::{handle_notify, RealNotifier};
+use notify::{handle_notify, refine_event_from_notification_type, NotifyContext, RealNotifier};
 use resolve::{resolve_base_dir, InstallScope};
+use std::io::IsTerminal;
 use std::str::FromStr;
 
 fn main() {
@@ -40,14 +42,34 @@ fn main() {
     };
     match cli.command {
         None => gui::run(),
-        Some(Command::Notify { harness, event, title, message }) => {
+        Some(Command::Notify { harness, event, title, message, cwd }) => {
             // Never fail hard: an unrecognized --event is a silent no-op,
             // not a crash that could break the calling harness's hook chain.
-            if let Ok(canonical) = CanonicalEvent::from_str(&event) {
+            if let Ok(mut canonical) = CanonicalEvent::from_str(&event) {
+                let payload = read_hook_payload();
+                if let Some(notification_type) = payload
+                    .as_ref()
+                    .and_then(|p| p.get("notification_type"))
+                    .and_then(|v| v.as_str())
+                {
+                    canonical = refine_event_from_notification_type(notification_type, canonical);
+                }
+                let payload_cwd = payload
+                    .as_ref()
+                    .and_then(|p| p.get("cwd"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let effective_cwd = cwd.or(payload_cwd);
+
                 let cfg = load_config(&default_config_path());
                 let notifier = RealNotifier;
                 let now = chrono::Local::now().time();
-                handle_notify(&cfg, harness.as_deref().unwrap_or(""), canonical, title.as_deref(), message.as_deref(), &notifier, now);
+                let ctx = NotifyContext {
+                    title: title.as_deref(),
+                    message: message.as_deref(),
+                    cwd: effective_cwd.as_deref(),
+                };
+                handle_notify(&cfg, harness.as_deref().unwrap_or(""), canonical, ctx, &notifier, now);
             }
         }
         Some(Command::Install { harness, project }) => {
@@ -60,8 +82,11 @@ fn main() {
             let cfg = load_config(&default_config_path());
             let notifier = RealNotifier;
             let now = chrono::Local::now().time();
-            handle_notify(&cfg, harness.as_deref().unwrap_or("test"), CanonicalEvent::Done, None, Some("Sample notification"), &notifier, now);
+            let cwd = std::env::current_dir().ok().map(|p| p.display().to_string());
+            let ctx = NotifyContext { message: Some("Sample notification"), cwd: cwd.as_deref(), ..Default::default() };
+            handle_notify(&cfg, harness.as_deref().unwrap_or("test"), CanonicalEvent::Done, ctx, &notifier, now);
         }
+        Some(Command::Check { .. }) => run_check(),
         Some(Command::Config { action: None }) => gui::run(),
         Some(Command::Config { action: Some(action) }) => run_config(action),
     }
@@ -98,6 +123,32 @@ fn run_install(harness: &str, project: bool, install: bool) {
     match result {
         Ok(()) => println!("harness-notify: {} {}", if install { "installed for" } else { "uninstalled from" }, harness),
         Err(e) => eprintln!("harness-notify: {e}"),
+    }
+}
+
+/// Reads and parses the hook's JSON payload from stdin, if one was piped in.
+/// Never blocks: a terminal stdin (no piped input, e.g. a manual `notify`
+/// call) is skipped entirely rather than waiting for input that will never
+/// arrive. Malformed or absent JSON is `None`, not an error - the static
+/// --event/--cwd flags already work without it.
+fn read_hook_payload() -> Option<serde_json::Value> {
+    if std::io::stdin().is_terminal() {
+        return None;
+    }
+    let mut buf = String::new();
+    std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf).ok()?;
+    serde_json::from_str(&buf).ok()
+}
+
+fn run_check() {
+    // Never blocks session start: prints at most one line, always exits 0.
+    if os_check::os_notifications_enabled() == Some(false) {
+        println!(
+            "harness-notify: OS-level desktop notifications appear to be disabled \
+(Windows: Settings > System > Notifications > \"Notifications\"). \
+harness-notify's hooks will run without error but nothing will appear \
+on screen until this is turned back on."
+        );
     }
 }
 

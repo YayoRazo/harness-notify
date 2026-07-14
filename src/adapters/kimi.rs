@@ -25,12 +25,19 @@ const HOOK_MAP: [(&str, CanonicalEvent); 3] = [
 // regardless of what harness-notify's own executable is named.
 const MARKER: &str = "notify --harness kimi --event";
 
+/// Same reasoning as MARKER, for the SessionStart entry.
+const CHECK_MARKER: &str = "check --hook session-start";
+
 fn config_path(base_dir: &Path) -> PathBuf {
     base_dir.join("config.toml")
 }
 
 fn our_command(binary_path: &Path, event: &str) -> String {
     format!("\"{}\" notify --harness kimi --event {}", binary_path.display(), event)
+}
+
+fn our_check_command(binary_path: &Path) -> String {
+    format!("\"{}\" check --hook session-start", binary_path.display())
 }
 
 fn read_root(path: &Path) -> Result<toml::Value, String> {
@@ -42,7 +49,11 @@ fn read_root(path: &Path) -> Result<toml::Value, String> {
 }
 
 fn is_ours(entry: &toml::Value) -> bool {
-    entry.get("command").and_then(|c| c.as_str()).map(|c| c.contains(MARKER)).unwrap_or(false)
+    entry
+        .get("command")
+        .and_then(|c| c.as_str())
+        .map(|c| c.contains(MARKER) || c.contains(CHECK_MARKER))
+        .unwrap_or(false)
 }
 
 fn write_root(path: &Path, root: &toml::Value) -> Result<(), String> {
@@ -70,6 +81,10 @@ fn patch(base_dir: &Path, binary_path: Option<&Path>) -> Result<(), String> {
             entry.insert("command".to_string(), toml::Value::String(our_command(bin, canonical.as_str())));
             hooks.push(toml::Value::Table(entry));
         }
+        let mut check_entry = toml::map::Map::new();
+        check_entry.insert("event".to_string(), toml::Value::String("SessionStart".to_string()));
+        check_entry.insert("command".to_string(), toml::Value::String(our_check_command(bin)));
+        hooks.push(toml::Value::Table(check_entry));
     }
     table.insert("hooks".to_string(), toml::Value::Array(hooks));
     write_root(&path, &root)
@@ -99,7 +114,7 @@ mod tests {
     }
 
     #[test]
-    fn install_writes_three_hooks_entries() {
+    fn install_writes_three_hooks_entries_plus_session_start_check() {
         let dir = tempdir().unwrap();
         let adapter = KimiAdapter;
         adapter.install(dir.path(), std::path::Path::new("/bin/harness-notify")).unwrap();
@@ -109,10 +124,12 @@ mod tests {
         let ours: Vec<_> = hooks.iter().filter(|h| {
             h["command"].as_str().unwrap_or("").contains("harness-notify")
         }).collect();
-        assert_eq!(ours.len(), 3);
+        assert_eq!(ours.len(), 4, "3 notify hooks + 1 SessionStart check");
         assert!(text.contains("event = \"Stop\""));
         assert!(text.contains("event = \"Notification\""));
         assert!(text.contains("event = \"SubagentStop\""));
+        assert!(text.contains("event = \"SessionStart\""));
+        assert!(text.contains("check --hook session-start"));
     }
 
     #[test]
@@ -127,7 +144,7 @@ mod tests {
         let ours = root["hooks"].as_array().unwrap().iter()
             .filter(|h| h["command"].as_str().unwrap_or("").contains("harness-notify"))
             .count();
-        assert_eq!(ours, 3);
+        assert_eq!(ours, 4);
     }
 
     #[test]

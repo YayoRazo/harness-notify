@@ -75,27 +75,82 @@ fn default_title(event: CanonicalEvent) -> &'static str {
     }
 }
 
+/// Which window sent the notification. Prefers the real project directory
+/// (from the hook's payload or --cwd) over the harness id, so multiple
+/// windows of the SAME harness are actually distinguishable - showing
+/// "claude-code" on every notification tells you nothing when three
+/// Claude Code windows are open at once.
+fn session_label(cfg: &Config, harness: &str, cwd: Option<&str>) -> Option<String> {
+    if !cfg.session.include_name {
+        return None;
+    }
+    match cwd {
+        Some(dir) if cfg.session.format == "path" => Some(dir.to_string()),
+        Some(dir) => {
+            let name = std::path::Path::new(dir)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(dir);
+            Some(name.to_string())
+        }
+        None => {
+            let harness_label = if harness.is_empty() { "unknown" } else { harness };
+            Some(harness_label.to_string())
+        }
+    }
+}
+
+/// What to say and where it came from - grouped together because they are
+/// always supplied (or omitted) as a set from a single hook invocation,
+/// keeping `handle_notify`'s own argument count small.
+#[derive(Default)]
+pub struct NotifyContext<'a> {
+    pub title: Option<&'a str>,
+    pub message: Option<&'a str>,
+    pub cwd: Option<&'a str>,
+}
+
 pub fn handle_notify(
     cfg: &Config,
     harness: &str,
     event: CanonicalEvent,
-    title_override: Option<&str>,
-    message_override: Option<&str>,
+    ctx: NotifyContext,
     notifier: &dyn Notifier,
     now: NaiveTime,
 ) {
     if !should_fire(cfg, event, now) {
         return;
     }
-    let title = title_override.unwrap_or_else(|| default_title(event));
-    let harness_label = if harness.is_empty() { "unknown" } else { harness };
-    let message = match (message_override, cfg.session.include_name) {
-        (Some(m), true) => format!("{m} ({harness_label})"),
-        (Some(m), false) => m.to_string(),
-        (None, true) => harness_label.to_string(),
-        (None, false) => String::new(),
+    let title = ctx.title.unwrap_or_else(|| default_title(event));
+    let label = session_label(cfg, harness, ctx.cwd);
+    let message = match (ctx.message, label) {
+        (Some(m), Some(l)) => format!("{m} ({l})"),
+        (Some(m), None) => m.to_string(),
+        (None, Some(l)) => l,
+        (None, None) => String::new(),
     };
     let _ = notifier.fire(title, &message);
+}
+
+/// Maps Claude Code's/Kimi's Notification `notification_type` payload field
+/// to the canonical event that should actually fire, refining the static
+/// event the hook was installed with. `permission_prompt` is a genuine
+/// blocking request; `agent_needs_input`/`agent_completed` are subagent
+/// lifecycle notifications routed through the same hook, which should
+/// respect `events.subagent_done` (off by default) instead of always
+/// reading as "needs your input". An unrecognized or absent type keeps
+/// whatever event the hook was statically installed with.
+pub fn refine_event_from_notification_type(notification_type: &str, fallback: CanonicalEvent) -> CanonicalEvent {
+    match notification_type {
+        "agent_needs_input" | "agent_completed" => CanonicalEvent::SubagentDone,
+        "permission_prompt"
+        | "idle_prompt"
+        | "auth_success"
+        | "elicitation_dialog"
+        | "elicitation_complete"
+        | "elicitation_response" => CanonicalEvent::Attention,
+        _ => fallback,
+    }
 }
 
 #[cfg(test)]
@@ -136,7 +191,7 @@ mod tests {
     fn handle_notify_calls_the_notifier_when_it_should_fire() {
         let cfg = Config::default();
         let notifier = FakeNotifier::default();
-        handle_notify(&cfg, "claude-code", CanonicalEvent::Done, None, None, &notifier, t(12, 0));
+        handle_notify(&cfg, "claude-code", CanonicalEvent::Done, NotifyContext::default(), &notifier, t(12, 0));
         assert_eq!(notifier.calls.borrow().len(), 1);
     }
 
@@ -147,7 +202,79 @@ mod tests {
         cfg.dnd.start = "00:00".to_string();
         cfg.dnd.end = "23:59".to_string();
         let notifier = FakeNotifier::default();
-        handle_notify(&cfg, "claude-code", CanonicalEvent::Done, None, None, &notifier, t(12, 0));
+        handle_notify(&cfg, "claude-code", CanonicalEvent::Done, NotifyContext::default(), &notifier, t(12, 0));
         assert_eq!(notifier.calls.borrow().len(), 0);
+    }
+
+    #[test]
+    fn session_label_uses_cwd_basename_by_default_when_enabled() {
+        let mut cfg = Config::default();
+        cfg.session.include_name = true;
+        let notifier = FakeNotifier::default();
+        let ctx = NotifyContext { cwd: Some("/home/op/harness-notify"), ..Default::default() };
+        handle_notify(&cfg, "claude-code", CanonicalEvent::Done, ctx, &notifier, t(12, 0));
+        let calls = notifier.calls.borrow();
+        assert_eq!(calls[0].1, "harness-notify");
+    }
+
+    #[test]
+    fn session_label_uses_full_path_when_format_is_path() {
+        let mut cfg = Config::default();
+        cfg.session.include_name = true;
+        cfg.session.format = "path".to_string();
+        let notifier = FakeNotifier::default();
+        let ctx = NotifyContext { cwd: Some("/home/op/harness-notify"), ..Default::default() };
+        handle_notify(&cfg, "claude-code", CanonicalEvent::Done, ctx, &notifier, t(12, 0));
+        let calls = notifier.calls.borrow();
+        assert_eq!(calls[0].1, "/home/op/harness-notify");
+    }
+
+    #[test]
+    fn session_label_falls_back_to_harness_id_when_no_cwd_available() {
+        let mut cfg = Config::default();
+        cfg.session.include_name = true;
+        let notifier = FakeNotifier::default();
+        handle_notify(&cfg, "claude-code", CanonicalEvent::Done, NotifyContext::default(), &notifier, t(12, 0));
+        let calls = notifier.calls.borrow();
+        assert_eq!(calls[0].1, "claude-code");
+    }
+
+    #[test]
+    fn no_session_label_when_include_name_is_off() {
+        let cfg = Config::default();
+        assert!(!cfg.session.include_name);
+        let notifier = FakeNotifier::default();
+        let ctx = NotifyContext { message: Some("done"), cwd: Some("/home/op/harness-notify"), ..Default::default() };
+        handle_notify(&cfg, "claude-code", CanonicalEvent::Done, ctx, &notifier, t(12, 0));
+        let calls = notifier.calls.borrow();
+        assert_eq!(calls[0].1, "done");
+    }
+
+    #[test]
+    fn refines_permission_prompt_to_attention() {
+        assert_eq!(
+            refine_event_from_notification_type("permission_prompt", CanonicalEvent::Done),
+            CanonicalEvent::Attention
+        );
+    }
+
+    #[test]
+    fn refines_agent_completed_and_agent_needs_input_to_subagent_done() {
+        assert_eq!(
+            refine_event_from_notification_type("agent_completed", CanonicalEvent::Attention),
+            CanonicalEvent::SubagentDone
+        );
+        assert_eq!(
+            refine_event_from_notification_type("agent_needs_input", CanonicalEvent::Attention),
+            CanonicalEvent::SubagentDone
+        );
+    }
+
+    #[test]
+    fn unrecognized_notification_type_keeps_the_fallback_event() {
+        assert_eq!(
+            refine_event_from_notification_type("some_future_type_we_dont_know_yet", CanonicalEvent::Attention),
+            CanonicalEvent::Attention
+        );
     }
 }

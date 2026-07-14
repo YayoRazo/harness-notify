@@ -18,6 +18,11 @@ pub enum Command {
         title: Option<String>,
         #[arg(long)]
         message: Option<String>,
+        /// The calling project's directory, for harnesses (like opencode)
+        /// that don't pipe a JSON payload with a `cwd` field on stdin.
+        /// Ignored when stdin already supplies one.
+        #[arg(long)]
+        cwd: Option<String>,
     },
     Install {
         #[arg(long)]
@@ -38,6 +43,16 @@ pub enum Command {
     Config {
         #[command(subcommand)]
         action: Option<ConfigAction>,
+    },
+    /// Checks whether the OS will actually display a notification, and
+    /// prints a warning if it looks disabled. Called from a session-start
+    /// hook, not by the operator directly - always exits 0. `--hook` is
+    /// informational (which hook point called it) and also gives adapters
+    /// a distinctive, multi-word command string to use as their own-entry
+    /// marker, instead of a single generic word.
+    Check {
+        #[arg(long)]
+        hook: Option<String>,
     },
 }
 
@@ -107,6 +122,15 @@ mod tests {
     fn no_subcommand_parses_to_none() {
         let cli = Cli::try_parse_from(["harness-notify"]).unwrap();
         assert!(cli.command.is_none());
+    }
+
+    #[test]
+    fn parses_check() {
+        let cli = Cli::try_parse_from(["harness-notify", "check", "--hook", "session-start"]).unwrap();
+        match cli.command {
+            Some(Command::Check { hook }) => assert_eq!(hook.as_deref(), Some("session-start")),
+            _ => panic!("expected Check"),
+        }
     }
 
     #[test]

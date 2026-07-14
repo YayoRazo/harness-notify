@@ -36,22 +36,25 @@ Notes on what these tiers actually mean in the shipped code:
 - **Tier A** (`src/adapters/claude_code.rs`, `src/adapters/opencode.rs`):
   `install`/`uninstall` idempotently patch that harness's real hook or
   plugin file. Claude Code gets `Stop` -> `done`, `Notification` ->
-  `attention`, `SubagentStop` -> `subagent-done` entries in `settings.json`.
-  opencode gets a generated `plugin/harness-notify.js` file (under the
-  project's `.opencode/` or the user's `<config_dir>/opencode/`) that
-  listens on the generic `event` hook key (`session.idle`/`session.status`
-  -> `done`, `permission.asked` -> `attention`).
+  `attention`, `SubagentStop` -> `subagent-done`, and `SessionStart` -> a
+  one-time OS-notification-capability check (see "Session-start check"
+  below) as entries in `settings.json`. opencode gets a generated
+  `plugin/harness-notify.js` file (under the project's `.opencode/` or the
+  user's `<config_dir>/opencode/`) that listens on the generic `event` hook
+  key (`session.idle`/`session.status` -> `done`, `permission.asked` ->
+  `attention`, `session.created` -> the same check).
 - **Tier B** (`src/adapters/antigravity.rs`, `src/adapters/kimi.rs`): the
   same idempotent-patch behavior as Tier A, but marked **UNVERIFIED**
   because the exact target path or event coverage has not been confirmed
   against a live install. Antigravity's adapter patches `hooks.json` and
   only wires the confirmed `Stop` -> `done` event - no `attention`-equivalent
-  event name could be confirmed, so it is deliberately not invented. Kimi's
-  adapter patches `config.toml`'s `[[hooks]]` array with the same
-  `Stop`/`Notification`/`SubagentStop` names Claude Code uses, targeting
-  `~/.kimi-code/config.toml`; a third-party source elsewhere uses
-  `~/.kimi/config.toml` instead, so confirm the path on a real install
-  before relying on it.
+  event name could be confirmed, so it is deliberately not invented (no
+  session-start check either, for the same reason). Kimi's adapter patches
+  `config.toml`'s `[[hooks]]` array with the same
+  `Stop`/`Notification`/`SubagentStop`/`SessionStart` names Claude Code
+  uses, targeting `~/.kimi-code/config.toml`; a third-party source
+  elsewhere uses `~/.kimi/config.toml` instead, so confirm the path on a
+  real install before relying on it.
 - **Tiers C and D** (`src/adapters/unsupported.rs`): both are implemented by
   the exact same `UnsupportedAdapter` - there is no behavioral difference
   between them in the code today. `install` and `uninstall` always return a
@@ -91,10 +94,11 @@ License: dual MIT OR Apache-2.0 (see `LICENSE-MIT` and `LICENSE-APACHE`).
 
 | Command | Flags | What it does |
 |---|---|---|
-| `harness-notify notify` | `--event <name>` (required), `--harness <id>`, `--title <text>`, `--message <text>` | Fires a notification if the event is enabled and outside quiet hours. This is what an installed hook actually calls. An unrecognized `--event` (or any other malformed input) is a silent no-op, never a crash or a non-zero exit - it must never block the calling harness's hook chain. |
-| `harness-notify install` | `--harness <id>` (required), `--project` | Installs the notify hook into the named harness's config. Defaults to the user-level location; `--project` targets the current project directory instead. Fails with a clear message on Tier C/D harnesses. |
+| `harness-notify notify` | `--event <name>` (required), `--harness <id>`, `--title <text>`, `--message <text>`, `--cwd <path>` | Fires a notification if the event is enabled and outside quiet hours. This is what an installed hook actually calls. An unrecognized `--event` (or any other malformed input) is a silent no-op, never a crash or a non-zero exit - it must never block the calling harness's hook chain. On Claude Code/Kimi, also reads the hook's JSON payload from stdin (if piped) to refine which event actually fires and to find the calling project's directory - see "Notification payload refinement" below. |
+| `harness-notify install` | `--harness <id>` (required), `--project` | Installs the notify hook (and, on Tier A/B, a `SessionStart` OS-notification check) into the named harness's config. Defaults to the user-level location; `--project` targets the current project directory instead. Fails with a clear message on Tier C/D harnesses. |
 | `harness-notify uninstall` | `--harness <id>` (required), `--project` | Removes only the hook entries this tool installed, leaving any other entries in the same file untouched. Fails with a clear message on Tier C/D harnesses. |
 | `harness-notify test` | `--harness <id>` | Fires a sample "done" notification immediately, ignoring the harness's own hook wiring - useful for confirming the OS notification path itself works. It still goes through the same `should_fire()` config check as a real notify, so `events.done=false` or active quiet hours will silently suppress it too. |
+| `harness-notify check` | `--hook <name>` | Checks whether the OS will actually display a notification (Windows only for now - see "Session-start check" below) and prints a warning if it looks disabled. Called from a `SessionStart`/`session.created` hook, not run by hand. |
 | `harness-notify config get <key>` | - | Prints one setting's current value. |
 | `harness-notify config set <key> <value>` | - | Changes one setting and saves `config.toml`. |
 | `harness-notify config list` | - | Prints every current setting. |
@@ -116,7 +120,7 @@ interactively, not an unattended hook.
 | `events.done` | `true`/`false` | notify when a task/session finishes (default `true`) |
 | `events.attention` | `true`/`false` | notify when input/a decision is needed (default `true`) |
 | `events.subagent_done` | `true`/`false` | notify when a subagent finishes (default `false`) |
-| `session.include_name` | `true`/`false` | include the harness name in the message (default `false`) |
+| `session.include_name` | `true`/`false` | include which window sent the notification (default `false`) |
 | `session.format` | `name` or `path` | how the session is labeled, if included (default `name`) |
 | `sound.enabled` | `true`/`false` | play a sound with the notification (default `true`) |
 | `dnd.enabled` | `true`/`false` | enable quiet hours (default `false`) |
@@ -126,6 +130,55 @@ interactively, not an unattended hook.
 Config lives at `~/.harness-notify/config.toml` (a single shared file - v1
 has no per-harness overrides). A missing or corrupt file silently falls
 back to the defaults above rather than erroring.
+
+When `session.include_name` is on, the notification shows which project
+directory sent it (the basename with `session.format = "name"`, the full
+path with `"path"`) - not the harness id. Multiple windows of the same
+harness open at once all say "claude-code" if only the harness id were
+shown, which defeats the point; the real `cwd` is what actually
+distinguishes them. The directory comes from the hook's own payload
+(Claude Code, Kimi) or a `--cwd` flag the adapter passes explicitly
+(opencode); if neither is available (e.g. a manual `notify` call with no
+`--cwd`), it falls back to the harness id as before.
+
+## Notification payload refinement
+
+Claude Code's and Kimi's `Notification` hook is more overloaded than its
+name suggests: its JSON payload carries a `notification_type` field with
+values including `permission_prompt`, `idle_prompt`, `auth_success`,
+`elicitation_dialog`, `elicitation_complete`, `elicitation_response`,
+`agent_needs_input`, and `agent_completed` - all routed through the same
+hook. Installing it with a single static `--event attention` would show
+"Needs your input" for all eight, which misrepresents most of them:
+`agent_needs_input`/`agent_completed` are subagent lifecycle notifications,
+not something that needs the operator's attention.
+
+`notify` reads the piped JSON payload (when one is piped - a manual
+invocation with no stdin never blocks waiting for input) and refines the
+event actually fired:
+
+| `notification_type` | Fires as |
+|---|---|
+| `permission_prompt`, `idle_prompt`, `auth_success`, `elicitation_dialog`, `elicitation_complete`, `elicitation_response` | `attention` |
+| `agent_needs_input`, `agent_completed` | `subagent-done` (respects `events.subagent_done`, off by default) |
+| anything else, or no payload at all | whatever `--event` the hook was installed with |
+
+This means the subagent-shaped notification types are silent by default,
+the same as a real `SubagentStop` firing - not a separate toggle to learn.
+
+## Session-start check
+
+Because a WinRT toast call can report success even when Windows silently
+drops it (the master "Notifications" toggle being off is the one confirmed
+case - see `src/os_check.rs`), Tier A/B `install` also wires a
+`SessionStart`/`session.created` hook that runs `harness-notify check`
+once per session. If it detects notifications are off, it prints a plain
+warning that the harness surfaces as context at the start of your next
+session - so a broken setup gets caught by the harness telling you, not by
+silence. Windows is the only platform checked for real today;
+macOS/Linux always assume notifications are enabled until a real signal
+for those platforms is confirmed (same honesty-over-uniform-coverage
+approach as the tier table above).
 
 ## Platform notes
 
