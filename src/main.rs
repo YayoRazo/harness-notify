@@ -72,7 +72,7 @@ fn main() {
                     message: message.as_deref(),
                     cwd: effective_cwd.as_deref(),
                 };
-                handle_notify(&cfg, harness.as_deref().unwrap_or(""), canonical, ctx, &notifier, now);
+                let _ = handle_notify(&cfg, harness.as_deref().unwrap_or(""), canonical, ctx, &notifier, now);
             }
             true
         }
@@ -84,8 +84,20 @@ fn main() {
             let now = chrono::Local::now().time();
             let cwd = std::env::current_dir().ok().map(|p| p.display().to_string());
             let ctx = NotifyContext { message: Some("Sample notification"), cwd: cwd.as_deref(), ..Default::default() };
-            handle_notify(&cfg, harness.as_deref().unwrap_or("test"), CanonicalEvent::Done, ctx, &notifier, now);
-            true
+            match handle_notify(&cfg, harness.as_deref().unwrap_or("test"), CanonicalEvent::Done, ctx, &notifier, now) {
+                Ok(true) => {
+                    println!("harness-notify: test notification fired");
+                    true
+                }
+                Ok(false) => {
+                    println!("harness-notify: test notification suppressed by config (event disabled or quiet hours)");
+                    true
+                }
+                Err(e) => {
+                    eprintln!("harness-notify: could not show the notification: {e}");
+                    false
+                }
+            }
         }
         Some(Command::Check { .. }) => {
             run_check();
@@ -100,8 +112,8 @@ fn main() {
     // notify and check keep an unconditional exit-0 guarantee: hooks call
     // them unattended, and a non-zero exit could block the calling
     // harness's own hook chain. The interactive subcommands
-    // (install/uninstall/config) exit 1 on a runtime failure so a script
-    // or agent driving them can detect it.
+    // (install/uninstall/config/test) exit 1 on a runtime failure so a
+    // script or agent driving them can detect it.
     std::process::exit(if ok { 0 } else { 1 });
 }
 

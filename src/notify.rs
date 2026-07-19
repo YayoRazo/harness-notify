@@ -122,6 +122,10 @@ pub struct NotifyContext<'a> {
     pub cwd: Option<&'a str>,
 }
 
+/// Returns whether a notification was actually shown: `Ok(true)` fired,
+/// `Ok(false)` suppressed by config (event disabled or quiet hours), `Err`
+/// when the OS notifier call itself failed. Hook-driven callers ignore the
+/// outcome (they must never block the harness); `test` reports it.
 pub fn handle_notify(
     cfg: &Config,
     harness: &str,
@@ -129,9 +133,9 @@ pub fn handle_notify(
     ctx: NotifyContext,
     notifier: &dyn Notifier,
     now: NaiveTime,
-) {
+) -> Result<bool, String> {
     if !should_fire(cfg, event, now) {
-        return;
+        return Ok(false);
     }
     let title = ctx.title.unwrap_or_else(|| default_title(event));
     let label = session_label(cfg, harness, ctx.cwd);
@@ -141,7 +145,7 @@ pub fn handle_notify(
         (None, Some(l)) => l,
         (None, None) => String::new(),
     };
-    let _ = notifier.fire(title, &message, cfg.sound.enabled);
+    notifier.fire(title, &message, cfg.sound.enabled).map(|()| true)
 }
 
 /// Maps Claude Code's/Kimi's Notification `notification_type` payload field
@@ -203,7 +207,8 @@ mod tests {
     fn handle_notify_calls_the_notifier_when_it_should_fire() {
         let cfg = Config::default();
         let notifier = FakeNotifier::default();
-        handle_notify(&cfg, "claude-code", CanonicalEvent::Done, NotifyContext::default(), &notifier, t(12, 0));
+        let result = handle_notify(&cfg, "claude-code", CanonicalEvent::Done, NotifyContext::default(), &notifier, t(12, 0));
+        assert_eq!(result, Ok(true));
         assert_eq!(notifier.calls.borrow().len(), 1);
     }
 
@@ -214,15 +219,29 @@ mod tests {
         cfg.dnd.start = "00:00".to_string();
         cfg.dnd.end = "23:59".to_string();
         let notifier = FakeNotifier::default();
-        handle_notify(&cfg, "claude-code", CanonicalEvent::Done, NotifyContext::default(), &notifier, t(12, 0));
+        let result = handle_notify(&cfg, "claude-code", CanonicalEvent::Done, NotifyContext::default(), &notifier, t(12, 0));
+        assert_eq!(result, Ok(false));
         assert_eq!(notifier.calls.borrow().len(), 0);
+    }
+
+    #[test]
+    fn handle_notify_surfaces_a_notifier_failure() {
+        struct FailingNotifier;
+        impl Notifier for FailingNotifier {
+            fn fire(&self, _: &str, _: &str, _: bool) -> Result<(), String> {
+                Err("no daemon".to_string())
+            }
+        }
+        let cfg = Config::default();
+        let result = handle_notify(&cfg, "claude-code", CanonicalEvent::Done, NotifyContext::default(), &FailingNotifier, t(12, 0));
+        assert_eq!(result, Err("no daemon".to_string()));
     }
 
     #[test]
     fn sound_enabled_by_default_reaches_the_notifier() {
         let cfg = Config::default();
         let notifier = FakeNotifier::default();
-        handle_notify(&cfg, "claude-code", CanonicalEvent::Done, NotifyContext::default(), &notifier, t(12, 0));
+        let _ = handle_notify(&cfg, "claude-code", CanonicalEvent::Done, NotifyContext::default(), &notifier, t(12, 0));
         assert!(notifier.calls.borrow()[0].2);
     }
 
@@ -231,7 +250,7 @@ mod tests {
         let mut cfg = Config::default();
         cfg.sound.enabled = false;
         let notifier = FakeNotifier::default();
-        handle_notify(&cfg, "claude-code", CanonicalEvent::Done, NotifyContext::default(), &notifier, t(12, 0));
+        let _ = handle_notify(&cfg, "claude-code", CanonicalEvent::Done, NotifyContext::default(), &notifier, t(12, 0));
         assert!(!notifier.calls.borrow()[0].2);
     }
 
@@ -241,7 +260,7 @@ mod tests {
         cfg.session.include_name = true;
         let notifier = FakeNotifier::default();
         let ctx = NotifyContext { cwd: Some("/home/op/harness-notify"), ..Default::default() };
-        handle_notify(&cfg, "claude-code", CanonicalEvent::Done, ctx, &notifier, t(12, 0));
+        let _ = handle_notify(&cfg, "claude-code", CanonicalEvent::Done, ctx, &notifier, t(12, 0));
         let calls = notifier.calls.borrow();
         assert_eq!(calls[0].1, "harness-notify");
     }
@@ -253,7 +272,7 @@ mod tests {
         cfg.session.format = "path".to_string();
         let notifier = FakeNotifier::default();
         let ctx = NotifyContext { cwd: Some("/home/op/harness-notify"), ..Default::default() };
-        handle_notify(&cfg, "claude-code", CanonicalEvent::Done, ctx, &notifier, t(12, 0));
+        let _ = handle_notify(&cfg, "claude-code", CanonicalEvent::Done, ctx, &notifier, t(12, 0));
         let calls = notifier.calls.borrow();
         assert_eq!(calls[0].1, "/home/op/harness-notify");
     }
@@ -263,7 +282,7 @@ mod tests {
         let mut cfg = Config::default();
         cfg.session.include_name = true;
         let notifier = FakeNotifier::default();
-        handle_notify(&cfg, "claude-code", CanonicalEvent::Done, NotifyContext::default(), &notifier, t(12, 0));
+        let _ = handle_notify(&cfg, "claude-code", CanonicalEvent::Done, NotifyContext::default(), &notifier, t(12, 0));
         let calls = notifier.calls.borrow();
         assert_eq!(calls[0].1, "claude-code");
     }
@@ -274,7 +293,7 @@ mod tests {
         assert!(!cfg.session.include_name);
         let notifier = FakeNotifier::default();
         let ctx = NotifyContext { message: Some("done"), cwd: Some("/home/op/harness-notify"), ..Default::default() };
-        handle_notify(&cfg, "claude-code", CanonicalEvent::Done, ctx, &notifier, t(12, 0));
+        let _ = handle_notify(&cfg, "claude-code", CanonicalEvent::Done, ctx, &notifier, t(12, 0));
         let calls = notifier.calls.borrow();
         assert_eq!(calls[0].1, "done");
     }
