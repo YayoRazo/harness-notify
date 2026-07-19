@@ -62,7 +62,7 @@ fn main() {
                     .and_then(|p| p.get("cwd"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
-                let effective_cwd = cwd.or(payload_cwd);
+                let effective_cwd = payload_cwd.or(cwd);
 
                 let cfg = load_config(&default_config_path());
                 let notifier = RealNotifier;
