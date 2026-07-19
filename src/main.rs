@@ -40,8 +40,11 @@ fn main() {
             e.exit();
         }
     };
-    match cli.command {
-        None => gui::run(),
+    let ok = match cli.command {
+        None => {
+            gui::run();
+            true
+        }
         Some(Command::Notify { harness, event, title, message, cwd }) => {
             // Never fail hard: an unrecognized --event is a silent no-op,
             // not a crash that could break the calling harness's hook chain.
@@ -71,13 +74,10 @@ fn main() {
                 };
                 handle_notify(&cfg, harness.as_deref().unwrap_or(""), canonical, ctx, &notifier, now);
             }
+            true
         }
-        Some(Command::Install { harness, project }) => {
-            run_install(&harness, project, true);
-        }
-        Some(Command::Uninstall { harness, project }) => {
-            run_install(&harness, project, false);
-        }
+        Some(Command::Install { harness, project }) => run_install(&harness, project, true),
+        Some(Command::Uninstall { harness, project }) => run_install(&harness, project, false),
         Some(Command::Test { harness }) => {
             let cfg = load_config(&default_config_path());
             let notifier = RealNotifier;
@@ -85,27 +85,36 @@ fn main() {
             let cwd = std::env::current_dir().ok().map(|p| p.display().to_string());
             let ctx = NotifyContext { message: Some("Sample notification"), cwd: cwd.as_deref(), ..Default::default() };
             handle_notify(&cfg, harness.as_deref().unwrap_or("test"), CanonicalEvent::Done, ctx, &notifier, now);
+            true
         }
-        Some(Command::Check { .. }) => run_check(),
-        Some(Command::Config { action: None }) => gui::run(),
+        Some(Command::Check { .. }) => {
+            run_check();
+            true
+        }
+        Some(Command::Config { action: None }) => {
+            gui::run();
+            true
+        }
         Some(Command::Config { action: Some(action) }) => run_config(action),
-    }
-    // notify/install/uninstall/test/config all print their own errors;
-    // the process itself always exits 0 so a stale hook call never blocks
-    // the calling harness.
-    std::process::exit(0);
+    };
+    // notify and check keep an unconditional exit-0 guarantee: hooks call
+    // them unattended, and a non-zero exit could block the calling
+    // harness's own hook chain. The interactive subcommands
+    // (install/uninstall/config) exit 1 on a runtime failure so a script
+    // or agent driving them can detect it.
+    std::process::exit(if ok { 0 } else { 1 });
 }
 
-fn run_install(harness: &str, project: bool, install: bool) {
+fn run_install(harness: &str, project: bool, install: bool) -> bool {
     let scope = if project { InstallScope::Project } else { InstallScope::User };
     let Some(home) = dirs::home_dir() else {
         eprintln!("harness-notify: could not resolve home directory");
-        return;
+        return false;
     };
     let config_dir = dirs::config_dir().unwrap_or_else(|| home.join(".config"));
     let Ok(cwd) = std::env::current_dir() else {
         eprintln!("harness-notify: could not resolve current directory");
-        return;
+        return false;
     };
     let base_dir = resolve_base_dir(harness, scope, &home, &config_dir, &cwd);
     let binary_path = std::env::current_exe().unwrap_or_else(|_| "harness-notify".into());
@@ -113,7 +122,7 @@ fn run_install(harness: &str, project: bool, install: bool) {
     let adapters = all_adapters();
     let Some(adapter) = adapters.iter().find(|a| a.id() == harness) else {
         eprintln!("unknown harness: {harness}");
-        return;
+        return false;
     };
     let result = if install {
         adapter.install(&base_dir, &binary_path)
@@ -121,8 +130,14 @@ fn run_install(harness: &str, project: bool, install: bool) {
         adapter.uninstall(&base_dir)
     };
     match result {
-        Ok(()) => println!("harness-notify: {} {}", if install { "installed for" } else { "uninstalled from" }, harness),
-        Err(e) => eprintln!("harness-notify: {e}"),
+        Ok(()) => {
+            println!("harness-notify: {} {}", if install { "installed for" } else { "uninstalled from" }, harness);
+            true
+        }
+        Err(e) => {
+            eprintln!("harness-notify: {e}");
+            false
+        }
     }
 }
 
@@ -155,26 +170,38 @@ harness-notify's hooks will run without error but nothing will appear on screen 
     }
 }
 
-fn run_config(action: ConfigAction) {
+fn run_config(action: ConfigAction) -> bool {
     let path = default_config_path();
     let mut cfg = load_config(&path);
     match action {
         ConfigAction::Get { key } => match config_ops::config_get(&cfg, &key) {
-            Ok(v) => println!("{v}"),
-            Err(e) => eprintln!("{e}"),
+            Ok(v) => {
+                println!("{v}");
+                true
+            }
+            Err(e) => {
+                eprintln!("{e}");
+                false
+            }
         },
         ConfigAction::Set { key, value } => match config_ops::config_set(&mut cfg, &key, &value) {
-            Ok(()) => {
-                if let Err(e) = save_config(&cfg, &path) {
+            Ok(()) => match save_config(&cfg, &path) {
+                Ok(()) => true,
+                Err(e) => {
                     eprintln!("failed to save config: {e}");
+                    false
                 }
+            },
+            Err(e) => {
+                eprintln!("{e}");
+                false
             }
-            Err(e) => eprintln!("{e}"),
         },
         ConfigAction::List => {
             for (k, v) in config_ops::config_list(&cfg) {
                 println!("{k} = {v}");
             }
+            true
         }
     }
 }

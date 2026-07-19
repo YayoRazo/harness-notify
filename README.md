@@ -111,7 +111,10 @@ clap error, so it can never block the calling harness's hook chain. The
 other subcommands (`install`, `uninstall`, `test`, `config`) use clap's
 normal error handling on malformed input - an informative message to
 stderr and a non-zero exit code - since a human or an agent runs them
-interactively, not an unattended hook.
+interactively, not an unattended hook. Runtime failures behave the same
+way: an unknown harness, a Tier C/D `install`/`uninstall`, an unknown
+config key or invalid value, and a failed config write all print to
+stderr and exit non-zero.
 
 ### Config keys
 
