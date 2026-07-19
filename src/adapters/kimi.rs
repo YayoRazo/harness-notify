@@ -166,6 +166,17 @@ mod tests {
     }
 
     #[test]
+    fn install_errs_on_corrupt_toml_and_leaves_the_file_untouched() {
+        let dir = tempdir().unwrap();
+        let original = "not = valid [ toml";
+        std::fs::write(config_path(dir.path()), original).unwrap();
+        let adapter = KimiAdapter;
+        let result = adapter.install(dir.path(), std::path::Path::new("/bin/harness-notify"));
+        assert!(result.is_err());
+        assert_eq!(std::fs::read_to_string(config_path(dir.path())).unwrap(), original);
+    }
+
+    #[test]
     fn uninstall_without_a_config_file_creates_nothing() {
         let dir = tempdir().unwrap();
         let adapter = KimiAdapter;

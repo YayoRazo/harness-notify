@@ -204,6 +204,37 @@ mod tests {
     }
 
     #[test]
+    fn quiet_hours_start_is_inclusive_and_end_is_exclusive() {
+        let mut cfg = Config::default();
+        cfg.dnd.enabled = true;
+        cfg.dnd.start = "22:00".to_string();
+        cfg.dnd.end = "08:00".to_string();
+        assert!(!should_fire(&cfg, CanonicalEvent::Done, t(22, 0)), "start boundary suppresses");
+        assert!(should_fire(&cfg, CanonicalEvent::Done, t(8, 0)), "end boundary fires again");
+    }
+
+    #[test]
+    fn equal_start_and_end_is_an_empty_window_that_never_suppresses() {
+        let mut cfg = Config::default();
+        cfg.dnd.enabled = true;
+        cfg.dnd.start = "10:00".to_string();
+        cfg.dnd.end = "10:00".to_string();
+        assert!(should_fire(&cfg, CanonicalEvent::Done, t(10, 0)));
+        assert!(should_fire(&cfg, CanonicalEvent::Done, t(23, 0)));
+    }
+
+    #[test]
+    fn unparsable_time_falls_back_to_midnight() {
+        // Reachable through a hand-edited config.toml; config set rejects it.
+        let mut cfg = Config::default();
+        cfg.dnd.enabled = true;
+        cfg.dnd.start = "10pm".to_string();
+        cfg.dnd.end = "08:00".to_string();
+        assert!(!should_fire(&cfg, CanonicalEvent::Done, t(3, 0)), "window becomes 00:00-08:00");
+        assert!(should_fire(&cfg, CanonicalEvent::Done, t(12, 0)));
+    }
+
+    #[test]
     fn handle_notify_calls_the_notifier_when_it_should_fire() {
         let cfg = Config::default();
         let notifier = FakeNotifier::default();
