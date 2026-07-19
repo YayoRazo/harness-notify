@@ -65,6 +65,11 @@ fn write_root(path: &Path, root: &toml::Value) -> Result<(), String> {
 
 fn patch(base_dir: &Path, binary_path: Option<&Path>) -> Result<(), String> {
     let path = config_path(base_dir);
+    // Uninstall with no config.toml present: nothing to remove, and writing
+    // would materialize a file (with an empty hooks array) that never existed.
+    if binary_path.is_none() && !path.exists() {
+        return Ok(());
+    }
     backup_before_write(&path).map_err(|e| e.to_string())?;
     let mut root = read_root(&path)?;
     let table = root.as_table_mut().ok_or("config.toml root must be a table")?;
@@ -158,6 +163,14 @@ mod tests {
         adapter.install(dir.path(), std::path::Path::new("/bin/harness-notify")).unwrap();
         let text = std::fs::read_to_string(config_path(dir.path())).unwrap();
         assert!(text.contains("some-other-tool"));
+    }
+
+    #[test]
+    fn uninstall_without_a_config_file_creates_nothing() {
+        let dir = tempdir().unwrap();
+        let adapter = KimiAdapter;
+        adapter.uninstall(dir.path()).unwrap();
+        assert!(!config_path(dir.path()).exists());
     }
 
     #[test]

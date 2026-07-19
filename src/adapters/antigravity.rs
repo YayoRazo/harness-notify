@@ -37,6 +37,11 @@ fn write_root(path: &Path, root: &Value) -> Result<(), String> {
 
 fn patch(base_dir: &Path, binary_path: Option<&Path>) -> Result<(), String> {
     let path = hooks_path(base_dir);
+    // Uninstall with no hooks.json present: nothing to remove, and writing
+    // would materialize a file (with an empty Stop array) that never existed.
+    if binary_path.is_none() && !path.exists() {
+        return Ok(());
+    }
     backup_before_write(&path).map_err(|e| e.to_string())?;
     let mut root = read_root(&path)?;
     let obj = root.as_object_mut().ok_or("hooks.json root must be an object")?;
@@ -98,6 +103,14 @@ mod tests {
         let text = std::fs::read_to_string(hooks_path(dir.path())).unwrap();
         let root: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(root["Stop"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn uninstall_without_a_hooks_file_creates_nothing() {
+        let dir = tempdir().unwrap();
+        let adapter = AntigravityAdapter;
+        adapter.uninstall(dir.path()).unwrap();
+        assert!(!hooks_path(dir.path()).exists());
     }
 
     #[test]

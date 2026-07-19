@@ -92,6 +92,11 @@ impl HookAdapter for ClaudeCodeAdapter {
 
     fn uninstall(&self, base_dir: &Path) -> Result<(), String> {
         let path = settings_path(base_dir);
+        // Nothing to remove - and writing here would materialize a
+        // settings.json (with empty hook arrays) that never existed.
+        if !path.exists() {
+            return Ok(());
+        }
         backup_before_write(&path).map_err(|e| e.to_string())?;
         let mut root = read_root(&path)?;
         for (hook_name, _) in HOOK_MAP {
@@ -163,6 +168,14 @@ mod tests {
         let text = std::fs::read_to_string(settings_path(dir.path())).unwrap();
         let root: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(root["hooks"]["Stop"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn uninstall_without_a_settings_file_creates_nothing() {
+        let dir = tempdir().unwrap();
+        let adapter = ClaudeCodeAdapter;
+        adapter.uninstall(dir.path()).unwrap();
+        assert!(!settings_path(dir.path()).exists());
     }
 
     #[test]
