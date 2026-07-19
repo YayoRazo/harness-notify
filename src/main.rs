@@ -50,19 +50,12 @@ fn main() {
             // not a crash that could break the calling harness's hook chain.
             if let Ok(mut canonical) = CanonicalEvent::from_str(&event) {
                 let payload = read_hook_payload();
-                if let Some(notification_type) = payload
-                    .as_ref()
-                    .and_then(|p| p.get("notification_type"))
-                    .and_then(|v| v.as_str())
-                {
-                    canonical = refine_event_from_notification_type(notification_type, canonical);
+                let (notification_type, payload_cwd) =
+                    payload.as_ref().map(payload_fields).unwrap_or((None, None));
+                if let Some(nt) = notification_type {
+                    canonical = refine_event_from_notification_type(nt, canonical);
                 }
-                let payload_cwd = payload
-                    .as_ref()
-                    .and_then(|p| p.get("cwd"))
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-                let effective_cwd = payload_cwd.or(cwd);
+                let effective_cwd = payload_cwd.map(str::to_string).or(cwd);
 
                 let cfg = load_config(&default_config_path());
                 let notifier = RealNotifier;
@@ -167,6 +160,16 @@ fn read_hook_payload() -> Option<serde_json::Value> {
     serde_json::from_str(&buf).ok()
 }
 
+/// The two fields `notify` consumes from a hook's JSON payload: the
+/// `notification_type` that refines which event fires, and the `cwd` that
+/// labels the notification. Absent or non-string fields are `None`.
+fn payload_fields(payload: &serde_json::Value) -> (Option<&str>, Option<&str>) {
+    (
+        payload.get("notification_type").and_then(|v| v.as_str()),
+        payload.get("cwd").and_then(|v| v.as_str()),
+    )
+}
+
 fn run_check() {
     // Never blocks session start: prints at most one line, always exits 0.
     if os_check::os_notifications_enabled() == Some(false) {
@@ -215,5 +218,28 @@ fn run_config(action: ConfigAction) -> bool {
             }
             true
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::payload_fields;
+    use serde_json::json;
+
+    #[test]
+    fn extracts_both_fields_when_present() {
+        let p = json!({"notification_type": "permission_prompt", "cwd": "/proj"});
+        assert_eq!(payload_fields(&p), (Some("permission_prompt"), Some("/proj")));
+    }
+
+    #[test]
+    fn absent_fields_are_none() {
+        assert_eq!(payload_fields(&json!({})), (None, None));
+    }
+
+    #[test]
+    fn non_string_fields_are_none_not_a_crash() {
+        let p = json!({"notification_type": 7, "cwd": ["x"]});
+        assert_eq!(payload_fields(&p), (None, None));
     }
 }
