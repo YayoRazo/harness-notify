@@ -27,6 +27,7 @@ pub fn run() {
 
     let path = default_config_path();
     let mut state = GuiState::load(&path);
+    let mut status: Option<String> = None;
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([360.0, 320.0]),
@@ -50,7 +51,16 @@ pub fn run() {
                 ui.text_edit_singleline(&mut state.cfg.dnd.end);
             });
             if ui.button("Save").clicked() {
-                let _ = state.save(&path);
+                status = Some(match crate::config_ops::validate_dnd_times(&state.cfg) {
+                    Err(e) => e,
+                    Ok(()) => match state.save(&path) {
+                        Ok(()) => "Saved".to_string(),
+                        Err(e) => format!("save failed: {e}"),
+                    },
+                });
+            }
+            if let Some(s) = &status {
+                ui.label(s.as_str());
             }
         });
     });
