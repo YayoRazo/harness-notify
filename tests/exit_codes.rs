@@ -7,8 +7,12 @@
 use std::process::{Command, Stdio};
 
 fn run(args: &[&str]) -> std::process::ExitStatus {
+    // Point the config dir at a throwaway temp dir so even read-only cases
+    // never depend on the operator's real ~/.harness-notify state.
+    let dir = tempfile::tempdir().unwrap();
     Command::new(env!("CARGO_BIN_EXE_harness-notify"))
         .args(args)
+        .env("HARNESS_NOTIFY_CONFIG_DIR", dir.path())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())

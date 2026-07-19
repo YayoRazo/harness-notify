@@ -63,10 +63,17 @@ pub struct Config {
     pub dnd: DndConfig,
 }
 
+/// `HARNESS_NOTIFY_CONFIG_DIR` overrides the directory (tests point it at a
+/// temp dir so they never touch the real user config; users can relocate it
+/// the same way).
 pub fn default_config_path() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".harness-notify")
+    std::env::var_os("HARNESS_NOTIFY_CONFIG_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".harness-notify")
+        })
         .join("config.toml")
 }
 

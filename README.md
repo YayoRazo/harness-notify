@@ -131,7 +131,8 @@ stderr and exit non-zero.
 | `dnd.end` | `HH:MM` | quiet hours end, local time, may cross midnight (default `08:00`) |
 
 Config lives at `~/.harness-notify/config.toml` (a single shared file - v1
-has no per-harness overrides). A missing or corrupt file silently falls
+has no per-harness overrides; set the `HARNESS_NOTIFY_CONFIG_DIR`
+environment variable to relocate the directory). A missing or corrupt file silently falls
 back to the defaults above rather than erroring.
 
 When `session.include_name` is on, the notification shows which project
