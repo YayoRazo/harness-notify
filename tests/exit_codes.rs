@@ -1,8 +1,9 @@
 // Exit-code contract: interactive subcommands (install/uninstall/config)
 // exit non-zero on a runtime failure so a script or agent driving them can
 // detect it; notify keeps its unconditional exit-0 guarantee because hooks
-// call it unattended. Every case here fails before writing anything, so no
-// real user config is touched.
+// call it unattended. No case here writes anything: the failing ones error
+// out before any write and the passing ones only read, so no real user
+// config is touched.
 use std::process::{Command, Stdio};
 
 fn run(args: &[&str]) -> std::process::ExitStatus {

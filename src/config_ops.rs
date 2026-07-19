@@ -23,6 +23,8 @@ fn parse_session_format(value: &str) -> Result<(), String> {
 
 /// The GUI's pre-save check for the two free-text time fields; the other
 /// settings it edits are checkboxes and cannot hold an invalid value.
+/// Gated so a --no-default-features build (no GUI caller) stays warning-free.
+#[cfg(any(feature = "gui", test))]
 pub fn validate_dnd_times(cfg: &Config) -> Result<(), String> {
     parse_hh_mm(&cfg.dnd.start)?;
     parse_hh_mm(&cfg.dnd.end)
