@@ -205,6 +205,15 @@ Notifications are delivered through [`notify-rust`](https://docs.rs/notify-rust)
   minimal or headless setup you may need to run one yourself, e.g.
   `dunst`).
 
+`sound.enabled` maps to each platform's own mechanism: on Windows, `true`
+plays the system default notification sound and `false` produces a silent
+toast; on Linux, `true` leaves the daemon's own sound behavior untouched and
+`false` sends the standard freedesktop `suppress-sound` hint. macOS
+notifications are delivered without a sound either way - an audible one
+needs a verified sound name plus a real bundle identifier that a bare
+`cargo install` binary doesn't have, the same constraint that keeps the
+session-start check unimplemented there.
+
 ## GUI feature
 
 The on-demand native settings window (`src/gui.rs`, built on `eframe`/`egui`)

@@ -5,19 +5,31 @@ use chrono::NaiveTime;
 use std::cell::RefCell;
 
 pub trait Notifier {
-    fn fire(&self, title: &str, message: &str) -> Result<(), String>;
+    fn fire(&self, title: &str, message: &str, sound: bool) -> Result<(), String>;
 }
 
 pub struct RealNotifier;
 
 impl Notifier for RealNotifier {
-    fn fire(&self, title: &str, message: &str) -> Result<(), String> {
-        notify_rust::Notification::new()
-            .summary(title)
-            .body(message)
-            .show()
-            .map(|_| ())
-            .map_err(|e| e.to_string())
+    fn fire(&self, title: &str, message: &str, sound: bool) -> Result<(), String> {
+        let mut n = notify_rust::Notification::new();
+        n.summary(title).body(message);
+        if sound {
+            // Windows builds a silent toast unless a sound name is set
+            // explicitly; "Default" selects the system default notification
+            // sound. Linux daemons already apply their own default. macOS
+            // stays soundless either way: an audible notification there
+            // needs a verified sound name plus a real bundle identifier,
+            // the same constraint that keeps os_check unimplemented on it.
+            #[cfg(target_os = "windows")]
+            n.sound_name("Default");
+        } else {
+            // Windows is already silent without a sound name; freedesktop
+            // daemons honor the standard suppress-sound hint.
+            #[cfg(all(unix, not(target_os = "macos")))]
+            n.hint(notify_rust::Hint::SuppressSound(true));
+        }
+        n.show().map(|_| ()).map_err(|e| e.to_string())
     }
 }
 
@@ -27,13 +39,13 @@ impl Notifier for RealNotifier {
 #[cfg(test)]
 #[derive(Default)]
 pub struct FakeNotifier {
-    pub calls: RefCell<Vec<(String, String)>>,
+    pub calls: RefCell<Vec<(String, String, bool)>>,
 }
 
 #[cfg(test)]
 impl Notifier for FakeNotifier {
-    fn fire(&self, title: &str, message: &str) -> Result<(), String> {
-        self.calls.borrow_mut().push((title.to_string(), message.to_string()));
+    fn fire(&self, title: &str, message: &str, sound: bool) -> Result<(), String> {
+        self.calls.borrow_mut().push((title.to_string(), message.to_string(), sound));
         Ok(())
     }
 }
@@ -129,7 +141,7 @@ pub fn handle_notify(
         (None, Some(l)) => l,
         (None, None) => String::new(),
     };
-    let _ = notifier.fire(title, &message);
+    let _ = notifier.fire(title, &message, cfg.sound.enabled);
 }
 
 /// Maps Claude Code's/Kimi's Notification `notification_type` payload field
@@ -204,6 +216,23 @@ mod tests {
         let notifier = FakeNotifier::default();
         handle_notify(&cfg, "claude-code", CanonicalEvent::Done, NotifyContext::default(), &notifier, t(12, 0));
         assert_eq!(notifier.calls.borrow().len(), 0);
+    }
+
+    #[test]
+    fn sound_enabled_by_default_reaches_the_notifier() {
+        let cfg = Config::default();
+        let notifier = FakeNotifier::default();
+        handle_notify(&cfg, "claude-code", CanonicalEvent::Done, NotifyContext::default(), &notifier, t(12, 0));
+        assert!(notifier.calls.borrow()[0].2);
+    }
+
+    #[test]
+    fn sound_disabled_reaches_the_notifier_as_a_silent_fire() {
+        let mut cfg = Config::default();
+        cfg.sound.enabled = false;
+        let notifier = FakeNotifier::default();
+        handle_notify(&cfg, "claude-code", CanonicalEvent::Done, NotifyContext::default(), &notifier, t(12, 0));
+        assert!(!notifier.calls.borrow()[0].2);
     }
 
     #[test]
