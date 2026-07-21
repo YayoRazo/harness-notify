@@ -189,6 +189,14 @@ mod tests {
     fn fires_when_event_enabled_and_no_quiet_hours() {
         let cfg = Config::default();
         assert!(should_fire(&cfg, CanonicalEvent::Done, t(14, 0)));
+        assert!(should_fire(&cfg, CanonicalEvent::Attention, t(14, 0)));
+    }
+
+    #[test]
+    fn does_not_fire_when_attention_disabled() {
+        let mut cfg = Config::default();
+        cfg.events.attention = false;
+        assert!(!should_fire(&cfg, CanonicalEvent::Attention, t(14, 0)));
     }
 
     #[test]
