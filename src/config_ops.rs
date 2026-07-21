@@ -14,6 +14,21 @@ fn parse_hh_mm(value: &str) -> Result<(), String> {
         .map_err(|_| format!("expected HH:MM, got {value}"))
 }
 
+fn parse_dnd_start_or_end(cfg: &Config, key: &str, value: &str) -> Result<(), String> {
+    parse_hh_mm(value)?;
+    let other = match key {
+        "dnd.start" => &cfg.dnd.end,
+        "dnd.end" => &cfg.dnd.start,
+        _ => unreachable!(),
+    };
+    if value == other {
+        return Err(format!(
+            "cannot set {key} = {value} when the other boundary is also {other} (an empty window). Use dnd.enabled = false to disable quiet hours instead."
+        ));
+    }
+    Ok(())
+}
+
 fn parse_session_format(value: &str) -> Result<(), String> {
     match value {
         "name" | "path" => Ok(()),
@@ -58,11 +73,15 @@ pub fn config_set(cfg: &mut Config, key: &str, value: &str) -> Result<(), String
         "sound.enabled" => cfg.sound.enabled = parse_bool(value)?,
         "dnd.enabled" => cfg.dnd.enabled = parse_bool(value)?,
         "dnd.start" => {
-            parse_hh_mm(value)?;
+            let mut candidate = cfg.clone();
+            candidate.dnd.start = value.to_string();
+            parse_dnd_start_or_end(&candidate, "dnd.start", value)?;
             cfg.dnd.start = value.to_string();
         }
         "dnd.end" => {
-            parse_hh_mm(value)?;
+            let mut candidate = cfg.clone();
+            candidate.dnd.end = value.to_string();
+            parse_dnd_start_or_end(&candidate, "dnd.end", value)?;
             cfg.dnd.end = value.to_string();
         }
         other => return Err(format!("unknown key: {other}")),
@@ -167,5 +186,20 @@ mod tests {
                 "config_set rejected a key config_list emits: {key}"
             );
         }
+    }
+
+    #[test]
+    fn equal_start_and_end_is_rejected() {
+        let mut cfg = Config::default();
+        // Set end to a different value first so the boundary check has a pair to compare.
+        config_set(&mut cfg, "dnd.end", "23:00").unwrap();
+        let result = config_set(&mut cfg, "dnd.start", "23:00");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty window"));
+
+        let mut cfg2 = Config::default();
+        config_set(&mut cfg2, "dnd.start", "06:00").unwrap();
+        let result2 = config_set(&mut cfg2, "dnd.end", "06:00");
+        assert!(result2.is_err());
     }
 }

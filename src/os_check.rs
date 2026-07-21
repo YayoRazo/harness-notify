@@ -27,7 +27,7 @@ pub fn os_notifications_enabled() -> Option<bool> {
     }
     #[cfg(target_os = "linux")]
     {
-        Some(linux::notification_daemon_running())
+        linux::daemon_status()
     }
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
@@ -87,14 +87,23 @@ mod windows {
 #[cfg(target_os = "linux")]
 mod linux {
     /// Whether a notification daemon is registered on the session D-Bus at
-    /// all (org.freedesktop.Notifications) - the standard freedesktop.org
-    /// mechanism, reused via notify-rust's own already-linked zbus client
-    /// rather than adding a direct D-Bus dependency of our own. This
-    /// detects the coarse "notifications can never work, nothing is
-    /// listening" case (no daemon installed/running), not a per-app or
-    /// do-not-disturb state - those vary by daemon (dunst, mako, ...) with
-    /// no common standard, so they are out of scope rather than guessed.
-    pub fn notification_daemon_running() -> bool {
-        notify_rust::get_server_information().is_ok()
+    /// all (org.freedesktop.Notifications). Returns `Some(true)` when a
+    /// daemon answered, `Some(false)` when the well-known name has no owner
+    /// (no daemon running), and `None` when the D-Bus session itself is
+    /// unreachable (permission error, bus not running, etc.) — in that
+    /// last case the daemon *might* still be reachable through another
+    /// transport path, so do not warn.
+    pub fn daemon_status() -> Option<bool> {
+        match notify_rust::get_server_information() {
+            Ok(_) => Some(true),
+            Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("Name has no owner") || msg.contains("name has no owner") {
+                    Some(false)
+                } else {
+                    None
+                }
+            }
+        }
     }
 }

@@ -1,15 +1,8 @@
-use super::{backup_before_write, HookAdapter};
-use crate::events::CanonicalEvent;
+use super::{backup_before_write, HookAdapter, HOOK_MAP};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
 pub struct ClaudeCodeAdapter;
-
-const HOOK_MAP: [(&str, CanonicalEvent); 3] = [
-    ("Stop", CanonicalEvent::Done),
-    ("Notification", CanonicalEvent::Attention),
-    ("SubagentStop", CanonicalEvent::SubagentDone),
-];
 
 fn settings_path(base_dir: &Path) -> PathBuf {
     base_dir.join("settings.json")

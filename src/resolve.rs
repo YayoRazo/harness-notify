@@ -13,6 +13,13 @@ pub fn resolve_base_dir(
     config_dir: &Path,
     cwd: &Path,
 ) -> PathBuf {
+    // Defense-in-depth: a harness id with path separators (../, /, \) could
+    // escape the intended base directory if it reached this fallback. The
+    // caller validates the harness against all_adapters() before I/O, but
+    // rejecting it here too closes the gap at the lowest-possible layer.
+    if harness.contains('/') || harness.contains('\\') || harness.contains("..") {
+        return home.join(".harness-notify");
+    }
     match (harness, scope) {
         ("claude-code", InstallScope::User) => home.join(".claude"),
         ("claude-code", InstallScope::Project) => cwd.join(".claude"),

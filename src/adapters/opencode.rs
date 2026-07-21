@@ -16,16 +16,29 @@ fn plugin_source(binary_path: &Path) -> String {
         r#"{marker}
 export default async ({{ directory }}) => {{
   const {{ spawn }} = await import("node:child_process")
-  const fire = (event) => {{
-    spawn({bin}, ["notify", "--harness", "opencode", "--event", event, "--cwd", directory], {{ stdio: "ignore", detached: true }}).unref()
+  const fire = (event, cwd) => {{
+    const args = ["notify", "--harness", "opencode", "--event", event]
+    if (cwd) args.push("--cwd", cwd)
+    spawn({bin}, args, {{ stdio: "ignore", detached: true }}).unref()
   }}
   const check = () => {{
     spawn({bin}, ["check", "--hook", "session-created"], {{ stdio: "ignore", detached: true }}).unref()
   }}
+
+  let doneTimer = null
+  const DONE_DEBOUNCE_MS = 15_000
+
   return {{
     event: async ({{ event }}) => {{
-      if (event.type === "session.idle" || event.type === "session.status") fire("done")
-      if (event.type === "permission.asked") fire("attention")
+      if (event.type === "permission.asked") {{
+        clearTimeout(doneTimer)
+        doneTimer = null
+        fire("attention")
+      }}
+      if (event.type === "session.idle") {{
+        clearTimeout(doneTimer)
+        doneTimer = setTimeout(() => {{ doneTimer = null; fire("done", directory) }}, DONE_DEBOUNCE_MS)
+      }}
       if (event.type === "session.created") check()
     }},
   }}

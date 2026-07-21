@@ -84,6 +84,21 @@ pub fn load_config(path: &Path) -> Config {
         .unwrap_or_default()
 }
 
+pub fn load_config_with_warning(path: &Path) -> (Config, Option<String>) {
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (Config::default(), None),
+        Err(e) => return (Config::default(), Some(format!("could not read config: {e}"))),
+    };
+    if text.trim().is_empty() {
+        return (Config::default(), None);
+    }
+    match toml::from_str(&text) {
+        Ok(cfg) => (cfg, None),
+        Err(e) => (Config::default(), Some(format!("config is malformed, using defaults: {e}"))),
+    }
+}
+
 pub fn save_config(cfg: &Config, path: &Path) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
