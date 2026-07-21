@@ -7,17 +7,10 @@
 // `toml` crate does not preserve
 // comments/formatting in the rest of the user's config.toml - acceptable for
 // v1, called out in the README.
-use super::{backup_before_write, HookAdapter};
-use crate::events::CanonicalEvent;
+use super::{backup_before_write, HookAdapter, HOOK_MAP};
 use std::path::{Path, PathBuf};
 
 pub struct KimiAdapter;
-
-const HOOK_MAP: [(&str, CanonicalEvent); 3] = [
-    ("Stop", CanonicalEvent::Done),
-    ("Notification", CanonicalEvent::Attention),
-    ("SubagentStop", CanonicalEvent::SubagentDone),
-];
 
 // Fixed CLI-args marker, not tied to binary_path's text: a check based on the
 // binary_path text would silently break if the binary is ever renamed or
@@ -73,11 +66,13 @@ fn patch(base_dir: &Path, binary_path: Option<&Path>) -> Result<(), String> {
     backup_before_write(&path).map_err(|e| e.to_string())?;
     let mut root = read_root(&path)?;
     let table = root.as_table_mut().ok_or("config.toml root must be a table")?;
-    let mut hooks: Vec<toml::Value> = table
-        .get("hooks")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
+    let mut hooks: Vec<toml::Value> = match table.get("hooks") {
+        Some(v) if !v.is_array() => {
+            return Err("config.toml: [[hooks]] must be an array of tables".to_string());
+        }
+        Some(v) => v.as_array().cloned().unwrap_or_default(),
+        None => Vec::new(),
+    };
     hooks.retain(|h| !is_ours(h));
     if let Some(bin) = binary_path {
         for (event_name, canonical) in HOOK_MAP {
@@ -182,6 +177,16 @@ mod tests {
         let adapter = KimiAdapter;
         adapter.uninstall(dir.path()).unwrap();
         assert!(!config_path(dir.path()).exists());
+    }
+
+    #[test]
+    fn install_errs_when_hooks_is_not_an_array() {
+        let dir = tempdir().unwrap();
+        std::fs::write(config_path(dir.path()), "hooks = \"not-an-array\"\n").unwrap();
+        let adapter = KimiAdapter;
+        let result = adapter.install(dir.path(), std::path::Path::new("/bin/harness-notify"));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must be an array of tables"));
     }
 
     #[test]

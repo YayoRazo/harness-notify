@@ -16,6 +16,7 @@ use events::CanonicalEvent;
 use notify::{handle_notify, refine_event_from_notification_type, NotifyContext, RealNotifier};
 use resolve::{resolve_base_dir, InstallScope};
 use std::io::IsTerminal;
+use std::io::Read;
 use std::str::FromStr;
 
 fn main() {
@@ -150,14 +151,16 @@ fn run_install(harness: &str, project: bool, install: bool) -> bool {
 /// Never blocks: a terminal stdin (no piped input, e.g. a manual `notify`
 /// call) is skipped entirely rather than waiting for input that will never
 /// arrive. Malformed or absent JSON is `None`, not an error - the static
-/// --event/--cwd flags already work without it.
+/// --event/--cwd flags already work without it. Reads are capped at 64 KiB
+/// so a malicious or buggy harness cannot OOM-kill the notify subprocess.
 fn read_hook_payload() -> Option<serde_json::Value> {
     if std::io::stdin().is_terminal() {
         return None;
     }
-    let mut buf = String::new();
-    std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf).ok()?;
-    serde_json::from_str(&buf).ok()
+    let mut buf = vec![0u8; 65536];
+    let n = std::io::stdin().read(&mut buf).ok()?;
+    let s = std::str::from_utf8(&buf[..n]).ok()?;
+    serde_json::from_str(s).ok()
 }
 
 /// The two fields `notify` consumes from a hook's JSON payload: the
@@ -172,22 +175,34 @@ fn payload_fields(payload: &serde_json::Value) -> (Option<&str>, Option<&str>) {
 
 fn run_check() {
     // Never blocks session start: prints at most one line, always exits 0.
-    if os_check::os_notifications_enabled() == Some(false) {
-        let hint = if cfg!(target_os = "linux") {
-            "no notification daemon is running (install/start one, e.g. dunst or mako)"
-        } else {
-            "Settings > System > Notifications > \"Notifications\" is off"
-        };
-        println!(
-            "harness-notify: OS-level desktop notifications appear to be disabled - {hint}. \
+    match os_check::os_notifications_enabled() {
+        Some(false) => {
+            let hint = if cfg!(target_os = "linux") {
+                "no notification daemon is running (install/start one, e.g. dunst or mako)"
+            } else {
+                "Settings > System > Notifications > \"Notifications\" is off"
+            };
+            println!(
+                "harness-notify: OS-level desktop notifications appear to be disabled - {hint}. \
 harness-notify's hooks will run without error but nothing will appear on screen until this is fixed."
-        );
+            );
+        }
+        None if cfg!(target_os = "linux") => {
+            println!(
+                "harness-notify: could not reach the notification daemon (check D-Bus session). \
+Notifications may still work, but this check could not confirm it."
+            );
+        }
+        _ => {}
     }
 }
 
 fn run_config(action: ConfigAction) -> bool {
     let path = default_config_path();
-    let mut cfg = load_config(&path);
+    let (mut cfg, warning) = config::load_config_with_warning(&path);
+    if let Some(w) = warning {
+        eprintln!("harness-notify: {w}");
+    }
     match action {
         ConfigAction::Get { key } => match config_ops::config_get(&cfg, &key) {
             Ok(v) => {

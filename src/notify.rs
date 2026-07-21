@@ -50,13 +50,19 @@ impl Notifier for FakeNotifier {
     }
 }
 
-fn parse_time(s: &str) -> NaiveTime {
-    NaiveTime::parse_from_str(s, "%H:%M").unwrap_or_else(|_| NaiveTime::from_hms_opt(0, 0, 0).unwrap())
+fn parse_time(s: &str) -> Option<NaiveTime> {
+    NaiveTime::parse_from_str(s, "%H:%M").ok()
 }
 
 fn in_quiet_hours(cfg: &Config, now: NaiveTime) -> bool {
-    let start = parse_time(&cfg.dnd.start);
-    let end = parse_time(&cfg.dnd.end);
+    let start = match parse_time(&cfg.dnd.start) {
+        Some(t) => t,
+        None => return false,
+    };
+    let end = match parse_time(&cfg.dnd.end) {
+        Some(t) => t,
+        None => return false,
+    };
     if start <= end {
         now >= start && now < end
     } else {
@@ -224,14 +230,25 @@ mod tests {
     }
 
     #[test]
-    fn unparsable_time_falls_back_to_midnight() {
+    fn unparsable_time_is_conservative_and_does_not_suppress() {
         // Reachable through a hand-edited config.toml; config set rejects it.
+        // An unparseable boundary means the window is undefined, so we do not
+        // suppress rather than guessing midnight (which could produce the wrong
+        // eight-hour DND block the operator never intended).
         let mut cfg = Config::default();
         cfg.dnd.enabled = true;
         cfg.dnd.start = "10pm".to_string();
         cfg.dnd.end = "08:00".to_string();
-        assert!(!should_fire(&cfg, CanonicalEvent::Done, t(3, 0)), "window becomes 00:00-08:00");
+        assert!(should_fire(&cfg, CanonicalEvent::Done, t(3, 0)), "unparseable start → don't suppress");
         assert!(should_fire(&cfg, CanonicalEvent::Done, t(12, 0)));
+
+        cfg.dnd.start = "22:00".to_string();
+        cfg.dnd.end = "not-valid".to_string();
+        assert!(should_fire(&cfg, CanonicalEvent::Done, t(3, 0)), "unparseable end → don't suppress");
+
+        cfg.dnd.start = "broken".to_string();
+        cfg.dnd.end = "also-broken".to_string();
+        assert!(should_fire(&cfg, CanonicalEvent::Done, t(3, 0)), "both unparseable → don't suppress");
     }
 
     #[test]

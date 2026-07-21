@@ -25,12 +25,15 @@ impl GuiState {
 pub fn run() {
     use crate::config::default_config_path;
 
+    const WINDOW_WIDTH: f32 = 360.0;
+    const WINDOW_HEIGHT: f32 = 320.0;
+
     let path = default_config_path();
     let mut state = GuiState::load(&path);
     let mut status: Option<String> = None;
 
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([360.0, 320.0]),
+        viewport: egui::ViewportBuilder::default().with_inner_size([WINDOW_WIDTH, WINDOW_HEIGHT]),
         ..Default::default()
     };
 

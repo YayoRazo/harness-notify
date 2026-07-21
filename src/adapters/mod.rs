@@ -1,3 +1,4 @@
+use crate::events::CanonicalEvent;
 use std::path::Path;
 
 pub mod antigravity;
@@ -11,6 +12,12 @@ pub trait HookAdapter {
     fn install(&self, base_dir: &Path, binary_path: &Path) -> Result<(), String>;
     fn uninstall(&self, base_dir: &Path) -> Result<(), String>;
 }
+
+pub const HOOK_MAP: [(&str, CanonicalEvent); 3] = [
+    ("Stop", CanonicalEvent::Done),
+    ("Notification", CanonicalEvent::Attention),
+    ("SubagentStop", CanonicalEvent::SubagentDone),
+];
 
 pub fn backup_before_write(path: &Path) -> std::io::Result<()> {
     if !path.exists() {
