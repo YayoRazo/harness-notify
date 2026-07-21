@@ -44,3 +44,18 @@ fn config_get_with_known_key_exits_zero() {
 fn notify_keeps_its_exit_zero_guarantee_even_on_a_bogus_event() {
     assert!(run(&["notify", "--event", "bogus"]).success());
 }
+
+#[test]
+fn notify_missing_event_flag_exits_zero() {
+    assert!(run(&["notify"]).success());
+}
+
+#[test]
+fn notify_help_exits_zero() {
+    assert!(run(&["notify", "--help"]).success());
+}
+
+#[test]
+fn notify_version_exits_zero() {
+    assert!(run(&["notify", "--version"]).success());
+}
