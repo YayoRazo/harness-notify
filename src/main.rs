@@ -44,7 +44,7 @@ fn main() {
     let ok = match cli.command {
         None => {
             gui::run();
-            true
+            cfg!(feature = "gui")
         }
         Some(Command::Notify { harness, event, title, message, cwd }) => {
             // Never fail hard: an unrecognized --event is a silent no-op,
@@ -99,7 +99,10 @@ fn main() {
         }
         Some(Command::Config { action: None }) => {
             gui::run();
-            true
+            // In a --no-default-features build, gui::run() prints an error and
+            // the operator should know the subcommand failed. The gui feature
+            // build always succeeds (the window opens or exits cleanly).
+            cfg!(feature = "gui")
         }
         Some(Command::Config { action: Some(action) }) => run_config(action),
     };

@@ -48,9 +48,12 @@ pub struct DndConfig {
     pub end: String,
 }
 
+pub const DEFAULT_DND_START: &str = "22:00";
+pub const DEFAULT_DND_END: &str = "08:00";
+
 impl Default for DndConfig {
     fn default() -> Self {
-        Self { enabled: false, start: "22:00".to_string(), end: "08:00".to_string() }
+        Self { enabled: false, start: DEFAULT_DND_START.to_string(), end: DEFAULT_DND_END.to_string() }
     }
 }
 
