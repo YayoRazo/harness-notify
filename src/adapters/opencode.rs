@@ -1,4 +1,4 @@
-use super::{backup_before_write, HookAdapter};
+use super::{atomic_write, backup_before_write, HookAdapter};
 use std::path::{Path, PathBuf};
 
 pub struct OpencodeAdapter;
@@ -56,11 +56,8 @@ impl HookAdapter for OpencodeAdapter {
 
     fn install(&self, base_dir: &Path, binary_path: &Path) -> Result<(), String> {
         let path = plugin_path(base_dir);
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
         backup_before_write(&path).map_err(|e| e.to_string())?;
-        std::fs::write(&path, plugin_source(binary_path)).map_err(|e| e.to_string())
+        atomic_write(&path, &plugin_source(binary_path))
     }
 
     fn uninstall(&self, base_dir: &Path) -> Result<(), String> {
