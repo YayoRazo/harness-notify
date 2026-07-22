@@ -70,14 +70,33 @@ pub struct Config {
 /// temp dir so they never touch the real user config; users can relocate it
 /// the same way).
 pub fn default_config_path() -> PathBuf {
-    std::env::var_os("HARNESS_NOTIFY_CONFIG_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            dirs::config_dir()
-                .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
-                .join("harness-notify")
-        })
+    if let Some(dir) = std::env::var_os("HARNESS_NOTIFY_CONFIG_DIR") {
+        let p = PathBuf::from(&dir);
+        // An existing directory is trusted (operator or test harness created
+        // it explicitly). For a non-existent path, gate it: only accept
+        // locations under the home directory so an attacker who controls the
+        // environment cannot redirect config writes arbitrarily.
+        if p.is_dir() || is_under_home(&p) {
+            return p.join("config.toml");
+        }
+        eprintln!("harness-notify: HARNESS_NOTIFY_CONFIG_DIR is outside the home directory, ignoring");
+    }
+    dirs::config_dir()
+        .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
+        .join("harness-notify")
         .join("config.toml")
+}
+
+fn is_under_home(p: &Path) -> bool {
+    if let Ok(canon) = p.canonicalize() {
+        if let Some(home) = dirs::home_dir() {
+            if let Ok(home_canon) = home.canonicalize() {
+                return canon.starts_with(&home_canon);
+            }
+        }
+    }
+    // If we can't resolve paths, err on the side of denying.
+    false
 }
 
 pub fn load_config(path: &Path) -> Config {

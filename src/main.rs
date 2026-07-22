@@ -87,8 +87,8 @@ fn main() {
                     println!("harness-notify: test notification suppressed by config (event disabled or quiet hours)");
                     true
                 }
-                Err(e) => {
-                    eprintln!("harness-notify: could not show the notification: {e}");
+                Err(_) => {
+                    eprintln!("harness-notify: could not show the notification");
                     false
                 }
             }
