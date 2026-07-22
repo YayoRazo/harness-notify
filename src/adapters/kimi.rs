@@ -7,7 +7,7 @@
 // `toml` crate does not preserve
 // comments/formatting in the rest of the user's config.toml - acceptable for
 // v1, called out in the README.
-use super::{backup_before_write, check_marker, marker_for, HookAdapter, HOOK_MAP};
+use super::{atomic_write, backup_before_write, check_marker, marker_for, HookAdapter, HOOK_MAP};
 use std::path::{Path, PathBuf};
 
 pub struct KimiAdapter;
@@ -41,10 +41,7 @@ fn is_ours(entry: &toml::Value) -> bool {
 }
 
 fn write_root(path: &Path, root: &toml::Value) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(path, toml::to_string_pretty(root).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+    atomic_write(path, &toml::to_string_pretty(root).map_err(|e| e.to_string())?)
 }
 
 fn patch(base_dir: &Path, binary_path: Option<&Path>) -> Result<(), String> {

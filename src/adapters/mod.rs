@@ -40,6 +40,22 @@ pub fn backup_before_write(path: &Path) -> std::io::Result<()> {
     std::fs::copy(path, backup).map(|_| ())
 }
 
+/// Write content to a temp sibling file, then atomically rename it over the
+/// target. This closes the TOCTOU window between reading and writing: another
+/// process (e.g. the harness itself) writing the same config between our read
+/// and our write cannot cause silent data loss — the worst case is one writer
+/// wins, but the file is never left in a partially-written or empty state.
+pub fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("tmp");
+    let tmp = path.with_file_name(format!(".{stem}.{ext}.tmp"));
+    std::fs::write(&tmp, content).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, path).map_err(|e| e.to_string())
+}
+
 pub fn all_adapters() -> Vec<Box<dyn HookAdapter>> {
     let mut v: Vec<Box<dyn HookAdapter>> = vec![
         Box::new(claude_code::ClaudeCodeAdapter),

@@ -1,4 +1,4 @@
-use super::{backup_before_write, check_marker, marker_for, HookAdapter, HOOK_MAP};
+use super::{atomic_write, backup_before_write, check_marker, marker_for, HookAdapter, HOOK_MAP};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
@@ -50,11 +50,7 @@ fn read_root(path: &Path) -> Result<Value, String> {
 }
 
 fn write_root(path: &Path, root: &Value) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(path, serde_json::to_string_pretty(root).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())
+    atomic_write(path, &serde_json::to_string_pretty(root).map_err(|e| e.to_string())?)
 }
 
 impl HookAdapter for ClaudeCodeAdapter {

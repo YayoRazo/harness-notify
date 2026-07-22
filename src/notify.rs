@@ -13,7 +13,7 @@ pub struct RealNotifier;
 impl Notifier for RealNotifier {
     fn fire(&self, title: &str, message: &str, sound: bool) -> Result<(), String> {
         let mut n = notify_rust::Notification::new();
-        n.summary(title).body(message);
+        n.appname("Razo Notifier").summary(title).body(message);
         if sound {
             // Windows builds a silent toast unless a sound name is set
             // explicitly; "Default" selects the system default notification

@@ -3,7 +3,7 @@
 // input"/Notification event name was found in any available source, so
 // `attention` is deliberately NOT wired here - do not guess an event name.
 // Revisit once a live install can be inspected.
-use super::{backup_before_write, marker_for, HookAdapter};
+use super::{atomic_write, backup_before_write, marker_for, HookAdapter};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
@@ -23,11 +23,7 @@ fn read_root(path: &Path) -> Result<Value, String> {
 }
 
 fn write_root(path: &Path, root: &Value) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    std::fs::write(path, serde_json::to_string_pretty(root).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())
+    atomic_write(path, &serde_json::to_string_pretty(root).map_err(|e| e.to_string())?)
 }
 
 fn patch(base_dir: &Path, binary_path: Option<&Path>) -> Result<(), String> {
