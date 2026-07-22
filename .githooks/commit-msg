@@ -1,0 +1,37 @@
+#!/bin/sh
+# Clean-room guard + Conventional Commits with REQUIRED scope. Activate with:
+#   git config core.hooksPath .githooks
+
+msg=$(sed '/^# -* >8 -*$/q' "$1" | grep -v '^#')
+subject=$(printf '%s\n' "$msg" | head -1)
+
+# Clean-room: reject AI authorship, wave/idea markers, robot emoji
+ai='Claude|Anthropic|Gemini|ChatGPT|OpenAI|GPT-?[0-9]|Codex|Copilot|DeepSeek|Cursor|Windsurf|Cline|Aider'
+if printf '%s\n' "$msg" | grep -nEi "Co-Authored-By:.*($ai)|(Generated|Written|Authored|Created) (with|by) ($ai)|🤖|(^|[^[:alnum:]])Wave [0-9]|(^|[^[:alnum:]])(idea|proposal) #?[0-9]" >/dev/null 2>&1; then
+  echo "commit-msg: message matches a clean-room leak pattern:" >&2
+  printf '%s\n' "$msg" | grep -nEi "$pattern" >&2
+  exit 1
+fi
+
+# No em dashes
+case "$msg" in *—*) echo "commit-msg: blocked - em dash (—) in message." >&2; exit 1;; esac
+
+# Conventional Commits: type(scope): summary (scope REQUIRED)
+case "$subject" in
+  "Merge "*|"Revert "*) ;;
+  *)
+    if ! printf '%s' "$subject" | grep -qE '^(feat|fix|docs|refactor|perf|test|build|ci|chore)\([a-zA-Z0-9_./-]+\)!?: '; then
+      echo "commit-msg: subject must be Conventional Commits with REQUIRED scope:" >&2
+      echo "  type(scope): summary   (types: feat fix docs refactor perf test build ci chore)" >&2
+      echo "  got: $subject" >&2
+      exit 1
+    fi
+    ;;
+esac
+
+# Subject ≤72 chars
+len=$(printf '%s' "$subject" | wc -c | tr -d ' ')
+if [ "$len" -gt 72 ]; then
+  echo "commit-msg: subject exceeds 72 characters ($len). Shorten it." >&2
+  exit 1
+fi

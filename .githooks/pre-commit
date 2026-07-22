@@ -1,0 +1,12 @@
+#!/bin/sh
+# Rust pre-commit gate: clippy + test. Activate with: git config core.hooksPath .githooks
+
+cargo clippy --all-targets -- -D warnings || {
+  echo "pre-commit: clippy failed (see above) - commit blocked." >&2
+  exit 1
+}
+
+cargo test || {
+  echo "pre-commit: tests failed (see above) - commit blocked." >&2
+  exit 1
+}
