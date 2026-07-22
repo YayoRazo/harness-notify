@@ -73,6 +73,13 @@ code actually registers are listed, in the order it registers them:
 `claude-code`, `opencode`, `antigravity`, `kimi`, `kilo`, `kiro`, `cursor`,
 `windsurf`, `cline`, `copilot`.
 
+## Prerequisites
+
+- **Linux**: a notification daemon such as `dunst` or `mako` must be running.
+  The D-Bus `org.freedesktop.Notifications` service is the delivery mechanism.
+- **macOS**: Notification Center is used; no extra deps needed.
+- **Windows**: WinRT toast notifications; no extra deps needed.
+
 ## Install
 
 Build and install from source with Cargo:
@@ -124,7 +131,7 @@ stderr and exit non-zero.
 | `events.attention` | `true`/`false` | notify when input/a decision is needed (default `true`) |
 | `events.subagent_done` | `true`/`false` | notify when a subagent finishes (default `false`) |
 | `session.include_name` | `true`/`false` | include which window sent the notification (default `false`) |
-| `session.format` | `name` or `path` | how the session is labeled, if included (default `name`) |
+| `session.format` | `name` or `path` | how the session is labeled, if included (default `name`). `path` shows the full project directory — be aware this leaks local paths into notification previews on screen. |
 | `sound.enabled` | `true`/`false` | play a sound with the notification (default `true`) |
 | `dnd.enabled` | `true`/`false` | enable quiet hours (default `false`) |
 | `dnd.start` | `HH:MM` | quiet hours start, local time (default `22:00`) |
