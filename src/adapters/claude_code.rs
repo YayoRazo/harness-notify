@@ -223,4 +223,28 @@ mod tests {
         let root: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(root["hooks"]["SessionStart"].as_array().unwrap().len(), 0);
     }
+
+    #[test]
+    fn uninstall_is_idempotent() {
+        let dir = tempdir().unwrap();
+        let adapter = ClaudeCodeAdapter;
+        let bin = std::path::Path::new("/bin/harness-notify");
+        adapter.install(dir.path(), bin).unwrap();
+        adapter.uninstall(dir.path()).unwrap();
+        adapter.uninstall(dir.path()).unwrap();
+        let text = std::fs::read_to_string(settings_path(dir.path())).unwrap();
+        let root: serde_json::Value = serde_json::from_str(&text).unwrap();
+        for event in ["Stop", "Notification", "SubagentStop", "SessionStart"] {
+            assert_eq!(root["hooks"][event].as_array().unwrap().len(), 0);
+        }
+    }
+
+    #[test]
+    fn install_errs_when_hooks_is_an_array_not_an_object() {
+        let dir = tempdir().unwrap();
+        std::fs::write(settings_path(dir.path()), r#"{"hooks":[1,2,3]}"#).unwrap();
+        let adapter = ClaudeCodeAdapter;
+        let result = adapter.install(dir.path(), std::path::Path::new("/bin/harness-notify"));
+        assert!(result.is_err());
+    }
 }

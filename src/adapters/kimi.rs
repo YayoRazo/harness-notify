@@ -199,4 +199,16 @@ mod tests {
         let text = std::fs::read_to_string(config_path(dir.path())).unwrap();
         assert!(!text.contains("harness-notify"));
     }
+
+    #[test]
+    fn uninstall_is_idempotent() {
+        let dir = tempdir().unwrap();
+        let adapter = KimiAdapter;
+        let bin = std::path::Path::new("/bin/harness-notify");
+        adapter.install(dir.path(), bin).unwrap();
+        adapter.uninstall(dir.path()).unwrap();
+        adapter.uninstall(dir.path()).unwrap();
+        let text = std::fs::read_to_string(config_path(dir.path())).unwrap();
+        assert!(!text.contains("harness-notify"));
+    }
 }

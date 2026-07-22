@@ -74,4 +74,58 @@ mod tests {
         );
         assert_eq!(got, Path::new("/home/op/.kimi-code"));
     }
+
+    #[test]
+    fn kimi_project_scope_is_cwd_dot_kimi_code() {
+        let got = resolve_base_dir(
+            "kimi", InstallScope::Project,
+            Path::new("/home/op"), Path::new("/home/op/.config"), Path::new("/proj"),
+        );
+        assert_eq!(got, Path::new("/proj/.kimi-code"));
+    }
+
+    #[test]
+    fn opencode_project_scope_is_cwd_dot_opencode() {
+        let got = resolve_base_dir(
+            "opencode", InstallScope::Project,
+            Path::new("/home/op"), Path::new("/home/op/.config"), Path::new("/proj"),
+        );
+        assert_eq!(got, Path::new("/proj/.opencode"));
+    }
+
+    #[test]
+    fn antigravity_user_scope_is_home_dot_gemini_config() {
+        let got = resolve_base_dir(
+            "antigravity", InstallScope::User,
+            Path::new("/home/op"), Path::new("/home/op/.config"), Path::new("/proj"),
+        );
+        assert_eq!(got, Path::new("/home/op/.gemini/config"));
+    }
+
+    #[test]
+    fn antigravity_project_scope_is_cwd_dot_agents() {
+        let got = resolve_base_dir(
+            "antigravity", InstallScope::Project,
+            Path::new("/home/op"), Path::new("/home/op/.config"), Path::new("/proj"),
+        );
+        assert_eq!(got, Path::new("/proj/.agents"));
+    }
+
+    #[test]
+    fn unknown_harness_user_scope_is_home_dot_harness() {
+        let got = resolve_base_dir(
+            "cursor", InstallScope::User,
+            Path::new("/home/op"), Path::new("/home/op/.config"), Path::new("/proj"),
+        );
+        assert_eq!(got, Path::new("/home/op/.cursor"));
+    }
+
+    #[test]
+    fn unknown_harness_project_scope_is_cwd_dot_harness() {
+        let got = resolve_base_dir(
+            "kilo", InstallScope::Project,
+            Path::new("/home/op"), Path::new("/home/op/.config"), Path::new("/proj"),
+        );
+        assert_eq!(got, Path::new("/proj/.kilo"));
+    }
 }

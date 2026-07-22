@@ -123,4 +123,39 @@ mod tests {
         let root: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(root["Stop"].as_array().unwrap().len(), 0);
     }
+
+    #[test]
+    fn uninstall_is_idempotent() {
+        let dir = tempdir().unwrap();
+        let adapter = AntigravityAdapter;
+        let bin = std::path::Path::new("/bin/harness-notify");
+        adapter.install(dir.path(), bin).unwrap();
+        adapter.uninstall(dir.path()).unwrap();
+        adapter.uninstall(dir.path()).unwrap();
+        let text = std::fs::read_to_string(hooks_path(dir.path())).unwrap();
+        let root: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(root["Stop"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn install_errs_when_stop_is_not_an_array() {
+        let dir = tempdir().unwrap();
+        std::fs::write(hooks_path(dir.path()), r#"{"Stop":"not-an-array"}"#).unwrap();
+        let adapter = AntigravityAdapter;
+        let result = adapter.install(dir.path(), std::path::Path::new("/bin/harness-notify"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn install_preserves_foreign_hooks() {
+        let dir = tempdir().unwrap();
+        std::fs::write(hooks_path(dir.path()), r#"{"Stop":[{"command":"other-tool"}]}"#).unwrap();
+        let adapter = AntigravityAdapter;
+        adapter.install(dir.path(), std::path::Path::new("/bin/harness-notify")).unwrap();
+        let text = std::fs::read_to_string(hooks_path(dir.path())).unwrap();
+        assert!(text.contains("other-tool"));
+        assert!(text.contains("harness-notify"));
+        let root: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(root["Stop"].as_array().unwrap().len(), 2);
+    }
 }
