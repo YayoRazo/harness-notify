@@ -128,6 +128,19 @@ pub struct NotifyContext<'a> {
     pub cwd: Option<&'a str>,
 }
 
+fn sanitize(s: &str) -> &str {
+    // Strip ASCII control characters (below 0x20, except tab and newline
+    // which are harmless in plain-text notification bodies) and reject any
+    // string containing angle brackets — desktop notification bodies are
+    // plain text, and some Linux daemons (dunst with markup=yes) render a
+    // subset of HTML, so brackets could be interpreted as markup.
+    if s.chars().any(|c| c == '<' || c == '>' || (c as u32) < 0x20 && c != '\t' && c != '\n') {
+        ""
+    } else {
+        s
+    }
+}
+
 /// Returns whether a notification was actually shown: `Ok(true)` fired,
 /// `Ok(false)` suppressed by config (event disabled or quiet hours), `Err`
 /// when the OS notifier call itself failed. Hook-driven callers ignore the
@@ -143,11 +156,11 @@ pub fn handle_notify(
     if !should_fire(cfg, event, now) {
         return Ok(false);
     }
-    let title = ctx.title.unwrap_or_else(|| default_title(event));
+    let title = sanitize(ctx.title.unwrap_or_else(|| default_title(event)));
     let label = session_label(cfg, harness, ctx.cwd);
     let message = match (ctx.message, label) {
-        (Some(m), Some(l)) => format!("{m} ({l})"),
-        (Some(m), None) => m.to_string(),
+        (Some(m), Some(l)) => format!("{} ({})", sanitize(m), l),
+        (Some(m), None) => sanitize(m).to_string(),
         (None, Some(l)) => l,
         (None, None) => String::new(),
     };

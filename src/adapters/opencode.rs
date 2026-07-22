@@ -93,14 +93,8 @@ mod tests {
         assert!(text.contains("event:"));
         assert!(text.contains("session.idle"));
         assert!(text.contains("permission.asked"));
-        // session.created is legitimately used here as an `event.type ===`
-        // comparison VALUE inside the correct `event:` dispatcher (it fires
-        // the session-start OS-notification check). What must never come
-        // back is the old anti-pattern of using it as a top-level HOOKS
-        // OBJECT KEY (`'session.created': async () => {}`), which opencode's
-        // real plugin loader never dispatches to at all.
-        assert!(!text.contains("'session.created':"), "must not use session.created as a non-firing hooks object key");
         assert!(text.contains(r#"event.type === "session.created""#), "must use session.created as an event.type comparison inside the event: dispatcher");
+        assert!(!text.contains("'session.created':"), "must not use session.created as a non-firing hooks object key");
     }
 
     #[test]
