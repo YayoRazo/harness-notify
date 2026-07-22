@@ -1,4 +1,4 @@
-use super::{backup_before_write, HookAdapter, HOOK_MAP};
+use super::{backup_before_write, check_marker, marker_for, HookAdapter, HOOK_MAP};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
@@ -7,16 +7,6 @@ pub struct ClaudeCodeAdapter;
 fn settings_path(base_dir: &Path) -> PathBuf {
     base_dir.join("settings.json")
 }
-
-/// Fixed argument syntax `our_command` always emits, independent of `binary_path`'s
-/// own text. Used to detect our own hook entries regardless of how the binary is
-/// named, aliased, or invoked.
-const MARKER: &str = "notify --harness claude-code --event";
-
-/// Same idea for the SessionStart entry - a distinctive, multi-word marker
-/// from our own fixed argument list, not a single generic word like "check"
-/// that a foreign hook could plausibly also contain.
-const CHECK_MARKER: &str = "check --hook session-start";
 
 fn our_command(binary_path: &Path, event: &str) -> String {
     format!("\"{}\" notify --harness claude-code --event {}", binary_path.display(), event)
@@ -77,9 +67,9 @@ impl HookAdapter for ClaudeCodeAdapter {
         backup_before_write(&path).map_err(|e| e.to_string())?;
         let mut root = read_root(&path)?;
         for (hook_name, event) in HOOK_MAP {
-            patch(&mut root, hook_name, MARKER, Some(our_command(binary_path, event.as_str())))?;
+            patch(&mut root, hook_name, &marker_for("claude-code"), Some(our_command(binary_path, event.as_str())))?;
         }
-        patch(&mut root, "SessionStart", CHECK_MARKER, Some(our_check_command(binary_path)))?;
+        patch(&mut root, "SessionStart", check_marker(), Some(our_check_command(binary_path)))?;
         write_root(&path, &root)
     }
 
@@ -93,9 +83,9 @@ impl HookAdapter for ClaudeCodeAdapter {
         backup_before_write(&path).map_err(|e| e.to_string())?;
         let mut root = read_root(&path)?;
         for (hook_name, _) in HOOK_MAP {
-            patch(&mut root, hook_name, MARKER, None)?;
+            patch(&mut root, hook_name, &marker_for("claude-code"), None)?;
         }
-        patch(&mut root, "SessionStart", CHECK_MARKER, None)?;
+        patch(&mut root, "SessionStart", check_marker(), None)?;
         write_root(&path, &root)
     }
 }

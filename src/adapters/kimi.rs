@@ -7,19 +7,10 @@
 // `toml` crate does not preserve
 // comments/formatting in the rest of the user's config.toml - acceptable for
 // v1, called out in the README.
-use super::{backup_before_write, HookAdapter, HOOK_MAP};
+use super::{backup_before_write, check_marker, marker_for, HookAdapter, HOOK_MAP};
 use std::path::{Path, PathBuf};
 
 pub struct KimiAdapter;
-
-// Fixed CLI-args marker, not tied to binary_path's text: a check based on the
-// binary_path text would silently break if the binary is ever renamed or
-// aliased. Every command this adapter emits contains this exact substring
-// regardless of what harness-notify's own executable is named.
-const MARKER: &str = "notify --harness kimi --event";
-
-/// Same reasoning as MARKER, for the SessionStart entry.
-const CHECK_MARKER: &str = "check --hook session-start";
 
 fn config_path(base_dir: &Path) -> PathBuf {
     base_dir.join("config.toml")
@@ -45,7 +36,7 @@ fn is_ours(entry: &toml::Value) -> bool {
     entry
         .get("command")
         .and_then(|c| c.as_str())
-        .map(|c| c.contains(MARKER) || c.contains(CHECK_MARKER))
+        .map(|c| c.contains(&marker_for("kimi")) || c.contains(check_marker()))
         .unwrap_or(false)
 }
 

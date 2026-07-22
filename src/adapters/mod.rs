@@ -19,6 +19,14 @@ pub const HOOK_MAP: [(&str, CanonicalEvent); 3] = [
     ("SubagentStop", CanonicalEvent::SubagentDone),
 ];
 
+pub fn marker_for(harness: &str) -> String {
+    format!("notify --harness {harness} --event")
+}
+
+pub fn check_marker() -> &'static str {
+    "check --hook session-start"
+}
+
 pub fn backup_before_write(path: &Path) -> std::io::Result<()> {
     if !path.exists() {
         return Ok(());

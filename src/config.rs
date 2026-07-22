@@ -73,9 +73,9 @@ pub fn default_config_path() -> PathBuf {
     std::env::var_os("HARNESS_NOTIFY_CONFIG_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            dirs::home_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join(".harness-notify")
+            dirs::config_dir()
+                .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")))
+                .join("harness-notify")
         })
         .join("config.toml")
 }
