@@ -3,16 +3,11 @@
 // input"/Notification event name was found in any available source, so
 // `attention` is deliberately NOT wired here - do not guess an event name.
 // Revisit once a live install can be inspected.
-use super::{backup_before_write, HookAdapter};
+use super::{backup_before_write, marker_for, HookAdapter};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
 pub struct AntigravityAdapter;
-
-// Fixed CLI-args marker, not tied to binary_path's text: a check based on the
-// binary_path text would silently break if the binary is ever renamed or
-// aliased.
-const MARKER: &str = "notify --harness antigravity --event";
 
 fn hooks_path(base_dir: &Path) -> PathBuf {
     base_dir.join("hooks.json")
@@ -50,7 +45,7 @@ fn patch(base_dir: &Path, binary_path: Option<&Path>) -> Result<(), String> {
         .or_insert_with(|| json!([]))
         .as_array_mut()
         .ok_or("\"Stop\" is not a JSON array")?;
-    arr.retain(|h| !h["command"].as_str().unwrap_or("").contains(MARKER));
+    arr.retain(|h| !h["command"].as_str().unwrap_or("").contains(&marker_for("antigravity")));
     if let Some(bin) = binary_path {
         arr.push(json!({ "command": our_command(bin) }));
     }

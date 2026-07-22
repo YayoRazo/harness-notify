@@ -96,7 +96,7 @@ pub fn config_list(cfg: &Config) -> Vec<(String, String)> {
         "sound.enabled", "dnd.enabled", "dnd.start", "dnd.end",
     ];
     keys.iter()
-        .map(|k| (k.to_string(), config_get(cfg, k).expect("key list is exhaustive")))
+        .filter_map(|k| config_get(cfg, k).ok().map(|v| (k.to_string(), v)))
         .collect()
 }
 
