@@ -125,6 +125,17 @@ mod tests {
     }
 
     #[test]
+    fn uninstall_is_idempotent() {
+        let dir = tempdir().unwrap();
+        let adapter = OpencodeAdapter;
+        let bin = std::path::Path::new("/bin/harness-notify");
+        adapter.install(dir.path(), bin).unwrap();
+        adapter.uninstall(dir.path()).unwrap();
+        adapter.uninstall(dir.path()).unwrap();
+        assert!(!plugin_path(dir.path()).exists());
+    }
+
+    #[test]
     fn uninstall_leaves_a_foreign_file_with_the_same_name_alone() {
         let dir = tempdir().unwrap();
         std::fs::create_dir_all(plugin_path(dir.path()).parent().unwrap()).unwrap();

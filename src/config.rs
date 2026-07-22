@@ -150,6 +150,15 @@ mod tests {
     }
 
     #[test]
+    fn empty_file_falls_back_to_defaults() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "").unwrap();
+        let cfg = load_config(&path);
+        assert!(cfg.events.done);
+    }
+
+    #[test]
     fn save_then_load_round_trips() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");

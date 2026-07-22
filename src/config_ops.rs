@@ -159,6 +159,21 @@ mod tests {
     }
 
     #[test]
+    fn validate_dnd_times_accepts_boundary_times() {
+        let mut cfg = Config::default();
+        cfg.dnd.start = "00:00".to_string();
+        cfg.dnd.end = "23:59".to_string();
+        assert!(validate_dnd_times(&cfg).is_ok());
+    }
+
+    #[test]
+    fn validate_dnd_times_rejects_out_of_range() {
+        let mut cfg = Config::default();
+        cfg.dnd.start = "25:00".to_string();
+        assert!(validate_dnd_times(&cfg).is_err());
+    }
+
+    #[test]
     fn list_returns_every_key() {
         let cfg = Config::default();
         let list = config_list(&cfg);

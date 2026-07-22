@@ -334,6 +334,43 @@ mod tests {
     }
 
     #[test]
+    fn session_label_falls_back_to_unknown_when_harness_is_empty() {
+        let mut cfg = Config::default();
+        cfg.session.include_name = true;
+        let notifier = FakeNotifier::default();
+        let _ = handle_notify(&cfg, "", CanonicalEvent::Done, NotifyContext::default(), &notifier, t(12, 0));
+        assert_eq!(notifier.calls.borrow()[0].1, "unknown");
+    }
+
+    #[test]
+    fn handle_notify_uses_custom_title_when_provided() {
+        let cfg = Config::default();
+        let notifier = FakeNotifier::default();
+        let ctx = NotifyContext { title: Some("Custom"), ..Default::default() };
+        let _ = handle_notify(&cfg, "claude-code", CanonicalEvent::Done, ctx, &notifier, t(12, 0));
+        assert_eq!(notifier.calls.borrow()[0].0, "Custom");
+    }
+
+    #[test]
+    fn handle_notify_with_no_message_no_label_sends_empty_body() {
+        let cfg = Config::default();
+        let notifier = FakeNotifier::default();
+        let ctx = NotifyContext::default();
+        let _ = handle_notify(&cfg, "", CanonicalEvent::Done, ctx, &notifier, t(12, 0));
+        assert_eq!(notifier.calls.borrow()[0].1, "");
+    }
+
+    #[test]
+    fn handle_notify_with_label_only_sends_just_the_label() {
+        let mut cfg = Config::default();
+        cfg.session.include_name = true;
+        let notifier = FakeNotifier::default();
+        let ctx = NotifyContext { cwd: Some("/proj"), ..Default::default() };
+        let _ = handle_notify(&cfg, "claude-code", CanonicalEvent::Done, ctx, &notifier, t(12, 0));
+        assert_eq!(notifier.calls.borrow()[0].1, "proj");
+    }
+
+    #[test]
     fn session_label_falls_back_to_harness_id_when_no_cwd_available() {
         let mut cfg = Config::default();
         cfg.session.include_name = true;
@@ -372,6 +409,17 @@ mod tests {
             refine_event_from_notification_type("agent_needs_input", CanonicalEvent::Attention),
             CanonicalEvent::SubagentDone
         );
+    }
+
+    #[test]
+    fn refines_all_known_attention_types() {
+        for nt in ["idle_prompt", "auth_success", "elicitation_dialog", "elicitation_complete", "elicitation_response"] {
+            assert_eq!(
+                refine_event_from_notification_type(nt, CanonicalEvent::Done),
+                CanonicalEvent::Attention,
+                "notification_type {nt} must map to Attention"
+            );
+        }
     }
 
     #[test]
